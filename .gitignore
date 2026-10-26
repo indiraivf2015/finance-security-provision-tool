@@ -1,0 +1,9 @@
+node_modules/
+dist/
+out/
+# Finance data must never be committed
+test-data/*.xlsx
+*.xlsx
+
+# User guide and screenshots contain real figures; kept offline
+docs/

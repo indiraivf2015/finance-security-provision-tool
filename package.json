@@ -1,0 +1,19 @@
+{
+  "name": "security-provision-tool",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Indira IVF - monthly Security Provision Working (SOP v1.0 + finance rules), single offline HTML tool",
+  "scripts": {
+    "build": "node build.js && node -e \"require('fs').copyFileSync('dist/Security_Provision_Tool.html','index.html')\"",
+    "test:tagger": "node test/tagger_test.js",
+    "test:scenarios": "node test/run.js test-data/extract_Sep-26.xlsx test-data/statement_Aug-26.xlsx test-data/provision_Sep-26.xlsx out/sep26.xlsx \"{\\\"openingYtdCol\\\":\\\"M\\\"}\" && node test/scenarios.js test-data out/sep26.xlsx",
+    "test:sep": "node test/run.js test-data/extract_Sep-26.xlsx test-data/statement_Aug-26.xlsx test-data/provision_Sep-26.xlsx out/sep26.xlsx \"{\\\"openingYtdCol\\\":\\\"M\\\"}\" && python test/compare_sep.py out/sep26.xlsx test-data/finance_statement_Sep-26.xlsx",
+    "test:e2e": "node test/e2e.js dist/Security_Provision_Tool.html test-data/extract_Sep-26.xlsx test-data/statement_Aug-26.xlsx test-data/provision_Sep-26.xlsx out/e2e_sep26.xlsx out/e2e"
+  },
+  "dependencies": {
+    "exceljs": "4.4.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.47.0"
+  }
+}
