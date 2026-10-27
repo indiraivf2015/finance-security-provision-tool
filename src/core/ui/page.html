@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<title>__TITLE__</title>
+<style>
+:root{
+  --bg:#f4f5f7; --panel:#ffffff; --sunk:#f8f9fb; --line:#e3e6ea; --line-strong:#cdd2d9;
+  --text:#191d23; --muted:#5a6270; --faint:#8b93a0;
+  --accent:#1d5c8f; --accent-hover:#174b75; --accent-ink:#ffffff; --accent-soft:#eaf1f8;
+  --ok:#067647; --ok-soft:#ecfdf3; --warn:#b54708; --warn-soft:#fff8eb; --bad:#b42318; --bad-soft:#fef3f2;
+  --r:8px; --r-sm:6px;
+  --shadow:0 1px 2px rgba(16,24,40,.05);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1216; --panel:#171b20; --sunk:#1c2127; --line:#272d35; --line-strong:#353c46;
+    --text:#e7eaee; --muted:#a2aab5; --faint:#78818d;
+    --accent:#5aa2d8; --accent-hover:#79b5e2; --accent-ink:#0b1520; --accent-soft:#18283a;
+    --ok:#4ade80; --ok-soft:#10241a; --warn:#fbbf24; --warn-soft:#282010; --bad:#f87171; --bad-soft:#2a1414;
+    --shadow:none;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased}
+svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.hidden{display:none !important}
+
+/* ---------- top bar ---------- */
+.top{background:var(--panel);border-bottom:1px solid var(--line)}
+.top .in{max-width:1200px;margin:0 auto;padding:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.logo{width:36px;height:36px;border-radius:var(--r);background:var(--accent-soft);color:var(--accent);display:grid;place-items:center}
+.logo svg.i{width:20px;height:20px}
+.top h1{font-size:18px;line-height:24px;margin:0;font-weight:600}
+.top .sub{margin:0;font-size:12px;color:var(--muted)}
+.chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:999px;border:1px solid var(--line);background:var(--sunk);color:var(--muted);font-size:12px;white-space:nowrap}
+.chip svg.i{width:14px;height:14px}
+.spacer{flex:1}
+a.chip{text-decoration:none;color:var(--muted)} a.chip:hover{border-color:var(--accent);color:var(--accent)}
+
+main{max-width:1200px;margin:0 auto;padding:24px 16px 64px}
+
+/* ---------- stepper ---------- */
+.stepper{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:16px}
+.st{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:var(--r);background:var(--panel);border:1px solid var(--line);color:var(--faint);font-size:13px;font-weight:500;min-width:0}
+.st .n{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;border:1px solid var(--line-strong);font-size:12px;flex:none}
+.st span.t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.st.cur{color:var(--text);border-color:var(--accent)}
+.st.cur .n{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.st.done{color:var(--text)}
+.st.done .n{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+.st.done .n svg.i{width:12px;height:12px;stroke-width:3}
+
+/* ---------- cards ---------- */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);margin-top:16px}
+.card-h{display:flex;align-items:flex-start;gap:12px;padding:16px 16px 0;flex-wrap:wrap}
+.card-h h2{font-size:16px;line-height:24px;margin:0;font-weight:600}
+.card-h p{margin:2px 0 0;color:var(--muted);font-size:13px}
+.card-b{padding:16px}
+.num-badge{width:24px;height:24px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-size:12px;font-weight:600;flex:none;margin-top:0}
+
+/* ---------- upload ---------- */
+.files{display:grid;grid-template-columns:1fr;gap:12px}
+@media (min-width:820px){.files{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.drop{position:relative;display:flex;flex-direction:column;gap:8px;padding:16px;border:1px dashed var(--line-strong);border-radius:var(--r);background:var(--sunk);cursor:pointer;transition:border-color .15s,background .15s;min-height:148px}
+.drop:hover,.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.drop .ic{width:32px;height:32px;border-radius:var(--r-sm);background:var(--panel);border:1px solid var(--line);display:grid;place-items:center;color:var(--muted)}
+.drop b{font-weight:600}
+.drop small{color:var(--muted);font-size:12px;line-height:1.45}
+.drop .fn{margin-top:auto;font-size:12px;color:var(--faint);display:flex;align-items:center;gap:6px;min-width:0}
+.drop .fn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drop.set{border-style:solid;border-color:var(--ok);background:var(--panel)}
+.drop.set .ic{background:var(--ok-soft);border-color:transparent;color:var(--ok)}
+.drop.set .fn{color:var(--text);font-weight:500}
+
+.actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:16px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 14px;border-radius:var(--r-sm);border:1px solid var(--line-strong);background:var(--panel);color:var(--text);font:inherit;font-weight:500;cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s}
+.btn:hover:not(:disabled){border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover:not(:disabled){background:var(--accent-hover);border-color:var(--accent-hover)}
+.btn.lg{height:44px;padding:0 20px;font-size:15px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.hint{color:var(--muted);font-size:13px}
+
+.msg{display:flex;gap:12px;border-radius:var(--r);padding:12px 14px;margin-top:16px;border:1px solid}
+.msg svg.i{margin-top:2px}
+.msg.bad{background:var(--bad-soft);border-color:var(--bad)} .msg.bad>svg.i{color:var(--bad)}
+.msg.warn{background:var(--warn-soft);border-color:var(--warn)} .msg.warn>svg.i{color:var(--warn)}
+.msg ul{margin:6px 0 0;padding-left:18px}
+.msg li{margin:2px 0}
+.msg select{margin-top:8px;max-width:100%;height:36px;padding:0 10px;border:1px solid var(--line-strong);border-radius:var(--r-sm);background:var(--panel);color:var(--text);font:inherit}
+
+/* ---------- step 2 ---------- */
+.summary{display:flex;flex-wrap:wrap;gap:8px 20px;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--sunk);font-size:13px;color:var(--muted)}
+.summary b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
+.summary .sep{width:1px;height:16px;background:var(--line-strong)}
+.prog{display:flex;align-items:center;gap:12px;margin-top:16px}
+.bar{flex:1;height:6px;border-radius:3px;background:var(--line);overflow:hidden;max-width:360px}
+.bar i{display:block;height:100%;background:var(--accent);transition:width .2s}
+.prog .lbl{font-size:13px;font-weight:500;white-space:nowrap}
+.prog .lbl.ok{color:var(--ok)}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
+.seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:var(--r-sm);overflow:hidden;background:var(--panel)}
+.seg button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:13px;height:34px;padding:0 12px;cursor:pointer}
+.seg button+button{border-left:1px solid var(--line-strong)}
+.seg button.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+
+.tablewrap{overflow:auto;max-height:600px;border:1px solid var(--line);border-radius:var(--r);margin-top:12px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:10px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+th{position:sticky;top:0;background:var(--sunk);font-weight:600;color:var(--muted);font-size:12px;z-index:1;white-space:nowrap}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.cc b{display:block;font-weight:600}
+td.cc span{color:var(--muted);font-size:12px}
+td.narr{min-width:260px;max-width:440px}
+td.narr div{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+td.note{color:var(--muted);font-size:12px;max-width:240px}
+tr.need td:first-child{box-shadow:inset 3px 0 0 var(--warn)}
+tr.need td{background:var(--warn-soft)}
+.sugg{display:inline-block;margin-top:4px;padding:1px 6px;border-radius:4px;background:var(--accent-soft);color:var(--accent);font-size:11px;font-weight:600}
+.auto{display:inline-block;margin-right:4px;padding:1px 6px;border-radius:4px;background:var(--ok-soft);color:var(--ok);font-size:11px;font-weight:600}
+.fy{display:inline-flex;border:1px solid var(--line-strong);border-radius:var(--r-sm);overflow:hidden;background:var(--panel)}
+.fy button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:12px;font-weight:600;height:30px;padding:0 10px;cursor:pointer;white-space:nowrap}
+.fy button+button{border-left:1px solid var(--line-strong)}
+.fy button.on{background:var(--accent);color:var(--accent-ink)}
+tr.need .fy{border-color:var(--warn)}
+input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);cursor:pointer;margin:2px 0 0}
+
+/* ---------- step 3 ---------- */
+.result{margin-top:16px;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.result-h{display:flex;align-items:center;gap:12px;padding:16px;flex-wrap:wrap}
+.result-h .ico{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;flex:none}
+.result-h .ico svg.i{width:22px;height:22px}
+.result.ok .result-h{background:var(--ok-soft)} .result.ok .ico{background:var(--panel);color:var(--ok)}
+.result.bad .result-h{background:var(--bad-soft)} .result.bad .ico{background:var(--panel);color:var(--bad)}
+.status{font-size:16px;font-weight:600;margin:0}
+.result.ok .status{color:var(--ok)} .result.bad .status{color:var(--bad)}
+.result-h .file{font-size:12px;color:var(--muted);margin:2px 0 0}
+.keys{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1px;background:var(--line);border-top:1px solid var(--line)}
+.key{background:var(--panel);padding:12px 16px}
+.key span{display:block;font-size:12px;color:var(--muted)}
+.key strong{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+.key small{display:block;font-size:11px;color:var(--faint);margin-top:2px}
+.details{border-top:1px solid var(--line);padding:12px 16px}
+.details summary{cursor:pointer;color:var(--accent);font-weight:500;font-size:13px;width:max-content}
+.details.pts summary{display:inline-flex;align-items:center;gap:6px;color:var(--warn);background:var(--warn-soft);border:1px solid var(--warn);border-radius:999px;padding:4px 12px;font-weight:600}
+.details.pts summary svg.i{width:16px;height:16px;color:var(--warn)}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-top:12px}
+.kv{border:1px solid var(--line);border-radius:var(--r-sm);padding:8px 12px}
+.kv span{display:block;font-size:12px;color:var(--muted)}
+.kv strong{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
+.badge.PASS{background:var(--ok-soft);color:var(--ok)}
+.badge.REVIEW{background:var(--warn-soft);color:var(--warn)}
+.badge.FAIL{background:var(--bad-soft);color:var(--bad)}
+.nav{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:16px;padding-top:16px;border-top:1px solid var(--line)}
+.actions .spacer,.nav .spacer{flex:1}
+.st.done{cursor:pointer} .st.done:hover{border-color:var(--accent)}
+.page{animation:fade .18s ease-out}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.foot{margin-top:24px;color:var(--faint);font-size:12px;text-align:center}
+@media (max-width:640px){.stepper{grid-template-columns:1fr}.top .spacer{display:none}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-sheet" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h2"/><path d="M14 13h2"/><path d="M8 17h2"/><path d="M14 17h2"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-x-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+  <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="in">
+    <div class="logo"><svg class="i"><use href="#i-sheet"/></svg></div>
+    <div>
+      <h1>__H1__</h1>
+      <p class="sub">Monthly working as per <span id="sopver"></span></p>
+    </div>
+    <div class="spacer"></div>
+    <a class="chip" href="index.html"><svg class="i"><use href="#i-arrow-left"/></svg>All provisions</a>
+    <span class="chip hidden" id="month-chip"><svg class="i"><use href="#i-calendar"/></svg><span id="month-txt"></span></span>
+    <span class="chip"><svg class="i"><use href="#i-lock"/></svg>Files stay on this computer</span>
+  </div>
+</header>
+
+<main>
+  <nav class="stepper" aria-label="Progress">
+    <div class="st cur" id="st1"><span class="n">1</span><span class="t">Upload files</span></div>
+    <div class="st" id="st2"><span class="n">2</span><span class="t">Download statement</span></div>
+  </nav>
+
+  <!-- STEP 1 -->
+  <section class="card page" id="sec-files" aria-labelledby="h-files">
+    <div class="card-h"><span class="num-badge">1</span><div><h2 id="h-files">Upload the three files</h2><p>Drop each file on its box, or click the box to choose it.</p></div></div>
+    <div class="card-b">
+      <div class="files">
+        <label class="drop" id="d-extract">
+          <input type="file" id="f-extract" accept=".xlsx" aria-label="Oracle ERP extract">
+          <span class="ic"><svg class="i"><use href="#i-upload"/></svg></span>
+          <b id="t-extract"></b>
+          <small id="s-extract"></small>
+          <span class="fn" id="n-extract"><span>No file chosen</span></span>
+        </label>
+        <label class="drop" id="d-opening">
+          <input type="file" id="f-opening" accept=".xlsx" aria-label="Last month's statement">
+          <span class="ic"><svg class="i"><use href="#i-upload"/></svg></span>
+          <b id="t-opening"></b>
+          <small id="s-opening"></small>
+          <span class="fn" id="n-opening"><span>No file chosen</span></span>
+        </label>
+        <label class="drop" id="d-rajeev">
+          <input type="file" id="f-rajeev" accept=".xlsx" aria-label="Provision file">
+          <span class="ic"><svg class="i"><use href="#i-upload"/></svg></span>
+          <b id="t-rajeev"></b>
+          <small id="s-rajeev"></small>
+          <span class="fn" id="n-rajeev"><span>No file chosen</span></span>
+        </label>
+      </div>
+      <div class="actions"><span id="read-status" class="hint"></span><span class="spacer"></span><button class="btn primary lg" id="b-read" disabled>Continue<svg class="i"><use href="#i-arrow-right"/></svg></button></div>
+      <div id="errors" class="msg bad hidden" role="alert"><svg class="i"><use href="#i-x-circle"/></svg><div><strong>The files can't be used yet</strong><ul id="error-list"></ul></div></div>
+      <div id="choice" class="msg warn hidden"><svg class="i"><use href="#i-alert"/></svg><div style="flex:1;min-width:0"><strong id="choice-title"></strong><div id="choice-body"></div><div class="actions" style="margin-top:12px"><button class="btn primary" id="b-choice">Continue</button></div></div></div>
+    </div>
+  </section>
+
+  <!-- STEP 2 -->
+  <section class="card page hidden" id="sec-gen" aria-labelledby="h-gen">
+    <div class="card-h"><span class="num-badge">2</span><div><h2 id="h-gen">Download the statement</h2><p id="gen-note"></p></div></div>
+    <div class="card-b">
+      <div id="result" class="result hidden">
+        <div class="result-h">
+          <span class="ico" id="r-ico"></span>
+          <div style="flex:1;min-width:200px"><p class="status" id="r-status"></p><p class="file" id="r-file"></p></div>
+          <button class="btn primary lg" id="b-dl"><svg class="i"><use href="#i-download"/></svg>Download Excel</button>
+        </div>
+        <div class="keys" id="r-keys"></div>
+        <details id="r-points" class="details pts">
+          <summary id="r-points-sum"></summary>
+          <p class="hint" style="margin:8px 0" id="points-note"></p>
+          <div class="tablewrap" style="max-height:none"><table><thead><tr><th>Centre</th><th>Point</th><th style="text-align:right">Amount</th><th>Suggested check</th></tr></thead><tbody id="r-points-body"></tbody></table></div>
+        </details>
+        <details id="r-details" class="details">
+          <summary>Show details</summary>
+          <div class="meta" id="r-totals"></div>
+          <div class="tablewrap" style="max-height:none"><table><thead><tr><th>#</th><th>SOP</th><th>Check</th><th style="text-align:right">Expected</th><th style="text-align:right">Actual</th><th>Result</th></tr></thead><tbody id="r-checks"></tbody></table></div>
+        </details>
+      </div>
+      <div class="nav"><button class="btn" id="b-back2"><svg class="i"><use href="#i-arrow-left"/></svg>Back</button><span class="spacer"></span><button class="btn" id="b-new"><svg class="i"><use href="#i-refresh"/></svg>Start next month</button></div>
+    </div>
+  </section>
+
+  <p class="foot" id="foot"></p>
+</main>
+
+<script>
+/*__EXCELJS__*/
+</script>
+<script>
+/*__ENGINE__*/
+</script>
+<script>
+/*__APP__*/
+</script>
+</body>
+</html>

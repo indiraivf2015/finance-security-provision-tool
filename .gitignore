@@ -1,8 +1,9 @@
 node_modules/
 dist/
 out/
-# Finance data must never be committed
-test-data/*.xlsx
+# Finance data must never be committed: everything in test-data/ except its README
+test-data/*
+!test-data/README.md
 *.xlsx
 
 # User guide and screenshots contain real figures; kept offline

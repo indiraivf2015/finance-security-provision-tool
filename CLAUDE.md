@@ -25,9 +25,27 @@ workbook. No backend: finance data never leaves the user's computer.
 - `src/start/index.html`: start page template. Cards: Security (described in build.js) + one per `src/provisions/<id>/meta.json`.
 - `src/security/`: FROZEN copy of the approved tool. `engine.js` (all logic, UMD), `ui.html` (2-step wizard; placeholders
   `/*__EXCELJS__*/`, `/*__ENGINE__*/`), `APPROVED.sha256` (the lock).
-- `src/core/` (from Step 2): shared code for Housekeeping and later provisions; started as a copy of Security's engine.
-- `src/provisions/<id>/` (from Step 2): settings + the parts that differ per SOP. Bundled with esbuild-wasm into one script.
+- `src/core/`: shared code for Housekeeping and later provisions (CommonJS; copied from Security's engine, never imported
+  by it). `common` (months, FY, ₹ format), `excel` (strict cell reading, styles), `tagger` (Step 6, copied line for line),
+  `extract` (Steps 1-4; accounts as a list), `clean` (Steps 7-9 + tags + "no year -> current FY"), `opening` (Step 13,
+  columns from settings), `provision-file` (Rajeev's file: sheet by name, column by heading), `rules` (negative-CF rule,
+  checks), `sheets` (Raw, Working, Points to check), `fy-statement` (the Security-style FY{cur}/FY{prev} statement,
+  Steps 10-17), `engine` (createEngine(def): load/analyse/build), `ui/` (page.html + app.js: the shared screens).
+- `src/provisions/<id>/index.js` + `meta.json`: one provision = settings + what differs; build.js bundles it with esbuild-wasm
+  (`require('exceljs')` -> the inlined ExcelJS) into `<id>.html`. Adding a provision = a new folder; the start page card is automatic.
 - Security of the pages: CSP `connect-src 'none'`, no unsafe-eval, DOM built with textContent only (no innerHTML).
+
+## Housekeeping Expenses (src/provisions/hk-expenses, SOP v1.1 Oct 2026)
+- Accounts 51610, 51612, 51613, 51614 only (51611 = Material); any other account stops the tool.
+- Steps 5-9 as Security; Step 7 keeps "IIVF P2P" and "Payables" (owner's decision Oct 2026, same as Security).
+- Pivot rows BALANCING_SEGMENT_DESC + SEGMENT1 + ATTRIBUTE3; statement takes each centre's total across vendors.
+- Rajeev: sheet "HK <Mon-YY>", column found by heading "Manpower" (column I in the real file; the SOP figure says H).
+  ÷118×100×1.135; same Storage Code rows added. Materials and Machine Rent are never read.
+- Statement "Housekeeping Exp – Provision for the month of {Sept-26}", same 10 columns as Security, amounts with 2 decimals.
+  Step 17 block in M5:O8 (below the header row so next month's reader never sees a second "YTD FY.." heading).
+- Finance rules: no year -> current FY; negative-CF rule (top 10). 17 checks.
+- NOT YET VERIFIED (no real HK extract yet): the report's GL parameter block for four non-contiguous accounts (not checked
+  until seen), and the SOP's statement totals. Verified: every Part D figure and both Part E worked examples (test-data/hk-expected.json).
 
 ## Safeguards (all automatic)
 - **Fingerprint lock:** build.js builds security.html first from `src/security/` only; if its sha256 differs from
@@ -78,8 +96,11 @@ Summary: title A2 "Security Provision for the month of {Sept-26}", L2 =(I3+K3)/1
   (company TLS inspection), so browser tests run with `PW_CHANNEL=msedge` (installed Edge).
 
 ## Testing (run all before any commit or deploy)
-`npm run build`, then `npm test` (release check + Security: tagger 56, scenarios 20, Sep-26 compare, golden),
-`npm run test:security:e2e` and `npm run test:start:e2e` (browser; prefix `PW_CHANNEL=msedge` on this PC).
+`npm run build`, then `npm test` (release check; Security: tagger 56, scenarios 20, Sep-26 compare, golden; core: tagger
+parity + core-vs-approved-Security parity (1921 Summary figures); Housekeeping Expenses: 24 scenarios + SOP figures), then the
+browser tests `npm run test:security:e2e`, `npm run test:hk-expenses:e2e`, `npm run test:start:e2e` (prefix `PW_CHANNEL=msedge` on this PC).
+Any change under `src/core/` must keep `test:core` passing: it proves the core still reproduces finance's approved Security statement.
+Provision tests use made-up files built by `test/fixtures.js`; SOP figures (finance data) are in test-data/hk-expected.json.
 Expected Sep-26 compare: 190 centres, 11 differ, all from one Payables bill finance excluded (details offline).
 Sample files go in `test-data/` (git-ignored; see test-data/README.md). Never commit finance data.
 

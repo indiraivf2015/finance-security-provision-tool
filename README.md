@@ -6,7 +6,7 @@ Automates Indira IVF finance's monthly provision workings. One page per provisio
 |---|---|---|
 | `index.html` | Start page | |
 | `security.html` | Security (SOP v1.0, Oct 2026, plus two finance rules) | Live, approved by finance. Frozen. |
-| `hk-expenses.html` | Housekeeping Expenses | In progress |
+| `hk-expenses.html` | Housekeeping Expenses (SOP v1.1, Oct 2026) | Built; awaiting finance's sample HK extract to verify the totals |
 | `hk-material.html` | Housekeeping Material | In progress |
 
 Each page reads 3 Excel files and produces the statement workbook. Everything runs in the browser: no backend,
@@ -38,13 +38,16 @@ npm run build
 
 ## Test (copy sample files into test-data/ first, see test-data/README.md)
 ```
-npm test                       # release check + all Security tests below except the browser one
+npm test                       # release check + Security, core and Housekeeping tests (not the browser ones)
 npm run test:release           # fingerprint lock, page list, Nginx rules, no network code (no data needed)
 npm run test:security:tagger    # 56 year-reading cases (no data needed)
 npm run test:security:scenarios # 20 problem cases: wrong month, bad files, rules, edge cases
 npm run test:security:sep      # Sep-26 run compared centre by centre with finance's statement
 npm run test:security:golden   # Sep-26 output identical to finance's approved file, cell for cell
 npm run test:security:e2e      # the real page in a browser; the download must equal the approved file
+npm run test:core              # shared core: same year tagging as Security; reproduces the approved Security statement
+npm run test:hk-expenses       # Housekeeping Expenses: 24 rules/problem cases (made-up data) + the SOP's own figures
+npm run test:hk-expenses:e2e   # hk-expenses.html in a browser; the download must equal the Node result
 npm run test:start:e2e         # start page: every card opens its page, no network requests
 ```
 Browser tests: set `PW_CHANNEL=msedge` to use the installed Edge if Playwright cannot download its browser.

@@ -38,6 +38,42 @@ function writeLock(hash) {
   fs.writeFileSync(LOCK, text);
 }
 
+/* ---------- Provision pages: core + provision module bundled into one script, inlined with ExcelJS ---------- */
+function provisionIds() {
+  const dir = p('src/provisions');
+  return fs.existsSync(dir) ? fs.readdirSync(dir).filter((id) => fs.existsSync(path.join(dir, id, 'meta.json'))).sort() : [];
+}
+
+async function bundleProvision(esbuild, id) {
+  const r = await esbuild.build({
+    absWorkingDir: ROOT, entryPoints: [`src/provisions/${id}/index.js`], bundle: true, format: 'iife', globalName: 'ProvisionEngine',
+    platform: 'browser', target: 'es2020', write: false, charset: 'utf8', legalComments: 'none', logLevel: 'silent',
+    alias: { exceljs: './src/core/browser/exceljs-global.js' }, // ExcelJS is inlined as its own script, not bundled
+  });
+  return r.outputFiles[0].text;
+}
+
+async function buildProvisions() {
+  const ids = provisionIds();
+  if (!ids.length) return new Map();
+  const esbuild = require('esbuild-wasm');
+  const tpl = fs.readFileSync(p('src/core/ui/page.html'), 'utf8');
+  const app = fs.readFileSync(p('src/core/ui/app.js'), 'utf8');
+  const exceljs = fs.readFileSync(p('node_modules/exceljs/dist/exceljs.min.js'), 'utf8');
+  const out = new Map();
+  try {
+    for (const id of ids) {
+      if (!/^[a-z0-9-]+$/.test(id)) throw new Error(`provision folder "${id}": use lower-case letters, digits and "-" only (it becomes ${id}.html)`);
+      const meta = JSON.parse(fs.readFileSync(p('src/provisions', id, 'meta.json'), 'utf8'));
+      const engine = await bundleProvision(esbuild, id);
+      for (const [n, s] of [['exceljs', exceljs], [id + ' engine', engine], ['app', app]]) noScriptClose(n, s);
+      out.set(id + '.html', tpl.replace('__TITLE__', () => esc(meta.title + ' Provision Tool')).replace('__H1__', () => esc(meta.title + ' Provision'))
+        .replace('/*__EXCELJS__*/', () => exceljs).replace('/*__ENGINE__*/', () => engine).replace('/*__APP__*/', () => app));
+    }
+  } finally { esbuild.stop(); }
+  return out;
+}
+
 /* ---------- Start page ---------- */
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -65,7 +101,7 @@ function buildStart(cards) {
 }
 
 /* ---------- Main ---------- */
-function main() {
+async function main() {
   const approve = process.argv.includes('--approve-security');
   const pages = new Map(); // file name at the site root -> html
 
@@ -85,7 +121,8 @@ function main() {
   }
   pages.set('security.html', sec);
 
-  // 2. Provision pages (Step 2 onward)
+  // 2. Provision pages
+  for (const [name, html] of await buildProvisions()) pages.set(name, html);
   const cards = [SECURITY_CARD, ...provisionCards()];
 
   // 3. Start page
@@ -104,5 +141,5 @@ function main() {
   console.log('security.html matches the approved fingerprint.');
 }
 
-if (require.main === module) main();
-module.exports = { buildSecurity, readLock, buildStart, provisionCards, SECURITY_CARD, sha256 };
+if (require.main === module) main().catch((e) => { console.error('BUILD FAILED: ' + (e.stack || e)); process.exit(1); });
+module.exports = { buildSecurity, readLock, buildStart, provisionCards, provisionIds, SECURITY_CARD, sha256 };

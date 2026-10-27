@@ -6,7 +6,7 @@
   "scripts": {
     "build": "node build.js",
     "approve:security": "node build.js --approve-security",
-    "test": "npm run test:release && npm run test:security",
+    "test": "npm run test:release && npm run test:security && npm run test:core && npm run test:hk-expenses",
     "test:release": "node test/release_check.js",
     "test:start:e2e": "node test/start_e2e.js",
     "test:security": "npm run test:security:tagger && npm run test:security:scenarios && npm run test:security:sep && npm run test:security:golden",
@@ -14,7 +14,10 @@
     "test:security:scenarios": "node test/security/run.js test-data/extract_Sep-26.xlsx test-data/statement_Aug-26.xlsx test-data/provision_Sep-26.xlsx out/sep26.xlsx \"{\\\"openingYtdCol\\\":\\\"M\\\"}\" && node test/security/scenarios.js test-data out/sep26.xlsx",
     "test:security:sep": "node test/security/run.js test-data/extract_Sep-26.xlsx test-data/statement_Aug-26.xlsx test-data/provision_Sep-26.xlsx out/sep26.xlsx \"{\\\"openingYtdCol\\\":\\\"M\\\"}\" && node test/security/compare_sep.js out/sep26.xlsx test-data/finance_statement_Sep-26.xlsx",
     "test:security:golden": "node test/security/golden_run.js src/security/engine.js test-data/extract_Sep-26.xlsx test-data/statement_Aug-26.xlsx test-data/provision_Sep-26.xlsx out/golden_sep26.xlsx \"{\\\"openingYtdCol\\\":\\\"M\\\"}\" && node test/golden.js test-data/golden/security_sep26.xlsx out/golden_sep26.xlsx",
-    "test:security:e2e": "node test/security/e2e.js security.html test-data/extract_Sep-26.xlsx test-data/statement_Aug-26.xlsx test-data/provision_Sep-26.xlsx out/e2e_sep26.xlsx out/e2e && node test/golden.js test-data/golden/security_sep26.xlsx out/e2e_sep26.xlsx"
+    "test:security:e2e": "node test/security/e2e.js security.html test-data/extract_Sep-26.xlsx test-data/statement_Aug-26.xlsx test-data/provision_Sep-26.xlsx out/e2e_sep26.xlsx out/e2e && node test/golden.js test-data/golden/security_sep26.xlsx out/e2e_sep26.xlsx",
+    "test:core": "node test/core/tagger_parity.js && node test/core/security_parity.js",
+    "test:hk-expenses": "node test/hk-expenses/scenarios.js && node test/hk-expenses/sop_figures.js",
+    "test:hk-expenses:e2e": "node test/hk-expenses/e2e.js"
   },
   "dependencies": {
     "exceljs": "4.4.0"
