@@ -1,7 +1,7 @@
-// Usage: node test/run.js <extract.xlsx> <opening.xlsx> <rajeev.xlsx> <out.xlsx> [optionsJSON]
+// Usage: node test/security/run.js <extract.xlsx> <opening.xlsx> <rajeev.xlsx> <out.xlsx> [optionsJSON]
 // Accepts every tool suggestion for lines needing confirmation (simulates "Accept all suggestions").
 const fs = require('fs');
-const SecProv = require('../src/engine.js');
+const SecProv = require('../../src/security/engine.js');
 (async () => {
   const [ex, op, rj, out, optJson, humanFy] = process.argv.slice(2); // humanFy: the year a reviewer chose for lines with no suggestion
   const opts = optJson ? JSON.parse(optJson) : {};

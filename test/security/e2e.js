@@ -1,10 +1,11 @@
 // End-to-end browser test (2-step flow): upload -> (YTD column choice if asked) -> statement -> download.
-// Usage: node test/e2e.js <html> <extract> <opening> <rajeev> <outXlsx> <screenshotPrefix>
+// Usage: node test/security/e2e.js <html> <extract> <opening> <rajeev> <outXlsx> <screenshotPrefix>
 const { chromium } = require('playwright');
 const fs = require('fs');
 (async () => {
   const [html, ex, op, rj, outX, shot] = process.argv.slice(2);
-  const browser = await chromium.launch();
+  // PW_CHANNEL=msedge uses the installed Edge where Playwright's own browser cannot be downloaded
+  const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   const ctx = await browser.newContext({ acceptDownloads: true, viewport: { width: 1280, height: 900 } });
   const page = await ctx.newPage();
   const consoleErrors = []; const requests = [];

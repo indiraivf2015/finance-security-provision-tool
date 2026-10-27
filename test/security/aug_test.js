@@ -1,6 +1,6 @@
 // Generality test on a different month: Aug-26 raw extract (from finance's Aug file "Raw" sheet)
 // Compares the tool's Steps 7-8 filter and Step 6 tags with finance's own Aug-26 Working "FY Bucket".
-const fs = require('fs'); const ExcelJS = require('exceljs'); const E = require('../src/engine.js');
+const fs = require('fs'); const ExcelJS = require('exceljs'); const E = require('../../src/security/engine.js');
 (async () => {
   const src = new ExcelJS.Workbook(); await src.xlsx.load(fs.readFileSync(process.argv[2]));
   const raw = src.getWorksheet('Raw');

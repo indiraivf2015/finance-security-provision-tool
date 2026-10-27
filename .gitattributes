@@ -1,0 +1,6 @@
+# Keep every text file with LF line endings in the working copy too (Windows included), so the
+# fingerprint check on security.html gives the same sha256 everywhere.
+* text=auto eol=lf
+*.xlsx binary
+*.png binary
+*.pdf binary

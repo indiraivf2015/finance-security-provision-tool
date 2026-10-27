@@ -1,5 +1,5 @@
 // Unit tests for SOP Step 6 tagging. Each case: [narration, period, expected fy (or null), expected sure]
-const E = require('../src/engine.js');
+const E = require('../../src/security/engine.js');
 const P = (label, y, m) => ({ label, y, m, cur: E.fyOf(y, m), prev: (E.fyOf(y, m) + 99) % 100 });
 const SEP26 = P('Sep-26', 2026, 9), APR27 = P('Apr-27', 2027, 4), MAR27 = P('Mar-27', 2027, 3);
 const cases = [

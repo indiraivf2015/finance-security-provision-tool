@@ -1,0 +1,4 @@
+# Approved Security tool. security.html must have exactly this sha256 or `npm run build` stops.
+# Approved by finance: Sep-26 output, Oct 2026 (golden file test-data/golden/security_sep26.xlsx).
+# Change this ONLY with the owner's explicit approval of a new Security version: npm run approve:security
+3c90f0eca9db3c91e46801ec2de7029bd7c46653b261b94914701c054fc29e68  security.html

@@ -1,4 +1,4 @@
-const fs = require('fs'); const ExcelJS = require('exceljs'); const E = require('../src/engine.js');
+const fs = require('fs'); const ExcelJS = require('exceljs'); const E = require('../../src/security/engine.js');
 (async () => {
   const src = new ExcelJS.Workbook(); await src.xlsx.load(fs.readFileSync(process.argv[2]));
   const raw = src.getWorksheet('Raw'); const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('Sheet1');

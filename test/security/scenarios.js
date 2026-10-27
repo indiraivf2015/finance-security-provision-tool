@@ -1,5 +1,5 @@
 // Scenario tests: bad inputs must stop with a clear message; good inputs (incl. the tool's own output as next month's opening) must work.
-const fs = require('fs'); const ExcelJS = require('exceljs'); const E = require('../src/engine.js');
+const fs = require('fs'); const ExcelJS = require('exceljs'); const E = require('../../src/security/engine.js');
 const S = process.argv[2]; // folder with real files
 fs.mkdirSync('out', { recursive: true });
 const F = { ex: S + '/extract_Sep-26.xlsx', op: S + '/statement_Aug-26.xlsx', rj: S + '/provision_Sep-26.xlsx' }; // sample files in test-data/ (not in git)

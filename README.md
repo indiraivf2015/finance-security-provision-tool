@@ -1,46 +1,62 @@
-# Security Provision Tool
+# Finance Provision Tools
 
-Automates Indira IVF finance's monthly **Security Provision Working** (SOP v1.0, Oct 2026) plus two finance rules added after testing (Oct 2026).
-Input: 3 Excel files. Output: the statement workbook. Runs entirely in the browser; no backend, no data leaves the computer.
+Automates Indira IVF finance's monthly provision workings. One page per provision, opened from a start page:
 
-- **Live (UAT):** https://uatsecprov.indiraivf.in
-- **Version:** 1.1.0
+| Page | Provision | Status |
+|---|---|---|
+| `index.html` | Start page | |
+| `security.html` | Security (SOP v1.0, Oct 2026, plus two finance rules) | Live, approved by finance. Frozen. |
+| `hk-expenses.html` | Housekeeping Expenses | In progress |
+| `hk-material.html` | Housekeeping Material | In progress |
 
-## How it works
-`index.html` (top level, the file the servers serve) is a single self-contained file built from:
+Each page reads 3 Excel files and produces the statement workbook. Everything runs in the browser: no backend,
+no network access, no data leaves the computer. Each page is one self-contained HTML file (ExcelJS inlined).
 
-| File | Purpose |
+- **Live:** https://uatsecprov.indiraivf.in (UAT), secprov.indiraivf.in (production)
+
+## How it is built
+| Source | Purpose |
 |---|---|
-| `src/engine.js` | All rules (SOP steps 1-16, checks, finance rules, Excel output). Works in Node and the browser. |
-| `src/ui.html` | Screens (Upload -> Download), styles and screen logic. |
-| `node_modules/exceljs/dist/exceljs.min.js` | Excel read/write library (ExcelJS 4.4.0), inlined at build time. |
-| `build.js` | Joins the three into `dist/Security_Provision_Tool.html`. |
+| `src/start/index.html` | Start page template (one card per provision). |
+| `src/security/` | The approved Security tool, frozen: `engine.js` (rules), `ui.html` (screens), `APPROVED.sha256` (its fingerprint). |
+| `src/core/`, `src/provisions/<id>/` | Shared code and one module per provision (Housekeeping onward). |
+| `build.js` | Builds every page into the site root and `dist/`, and writes `SHA256SUMS`. |
+
+`npm run build` builds Security first and **stops without writing anything** if `security.html` would differ from
+the approved fingerprint. A new Security version needs the owner's explicit approval (`npm run approve:security`).
 
 ## Setup
 ```
-npm install
-npx playwright install chromium     # only for the browser test
+npm ci
+npx playwright install chromium     # only for the browser tests; or use the installed Edge (PW_CHANNEL=msedge)
 ```
 
 ## Build
 ```
-npm run build        # writes dist/Security_Provision_Tool.html and copies it to index.html
+npm run build
 ```
 
 ## Test (copy sample files into test-data/ first, see test-data/README.md)
 ```
-npm run test:tagger      # 56 year-reading cases (no data needed)
-npm run test:scenarios   # 20 problem cases: wrong month, bad files, rules, edge cases
-npm run test:sep         # Sep-26 run compared centre by centre with finance's statement
-npm run test:e2e         # drives the real page in a browser, downloads the Excel
+npm test                       # release check + all Security tests below except the browser one
+npm run test:release           # fingerprint lock, page list, Nginx rules, no network code (no data needed)
+npm run test:security:tagger    # 56 year-reading cases (no data needed)
+npm run test:security:scenarios # 20 problem cases: wrong month, bad files, rules, edge cases
+npm run test:security:sep      # Sep-26 run compared centre by centre with finance's statement
+npm run test:security:golden   # Sep-26 output identical to finance's approved file, cell for cell
+npm run test:security:e2e      # the real page in a browser; the download must equal the approved file
+npm run test:start:e2e         # start page: every card opens its page, no network requests
 ```
-Formula check (optional, needs LibreOffice): convert an output with a profile using `test/lo_recalc_profile.xcu`
-(forces recalculation), then `python test/recalc_compare.py <output.xlsx> <recalculated.xlsx>`.
+Browser tests: set `PW_CHANNEL=msedge` to use the installed Edge if Playwright cannot download its browser.
+
+Formula check (optional, needs LibreOffice): convert an output with a profile using `test/security/lo_recalc_profile.xcu`
+(forces recalculation), then `node test/security/recalc_compare.js <output.xlsx> <recalculated.xlsx>`.
 
 ## Deploy
-- **EC2 / Nginx:** see `deploy-ec2/DEPLOY_EC2.md` (Nginx serves only index.html; source files and .git are not reachable). Servers pull this repo; update with `git pull`.
-- After any change: `npm run build`, run the tests, commit `index.html`, then `git pull` on UAT, test, then production.
-- Check the deployed file: `sha256sum index.html` must equal the hash printed by `npm run build`.
+- **EC2 / Nginx:** see `deploy-ec2/DEPLOY_EC2.md`. Nginx serves only `/` and top-level `.html` pages; source files,
+  `.git` and everything else return 404. Servers update with `git pull`.
+- After any change: `npm run build`, run all tests, commit the built pages and `SHA256SUMS`, then on UAT
+  `git pull` and `sha256sum -c SHA256SUMS`, test, then production.
 
 ## User guide
 Kept offline (it shows real figures); ask finance or the owner for the PDF.

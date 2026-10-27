@@ -1,11 +1,13 @@
-# CLAUDE.md: Security Provision Tool
+# CLAUDE.md: Finance Provision Tools
 
-Read this before changing anything. This is a **finance tool**: figures go into the ERP. Correctness beats features.
+Read this before changing anything. These are **finance tools**: figures go into the ERP. Correctness beats features.
 
 ## What it is
-Automates Indira IVF finance's monthly **Security Provision Working** (SOP v1.0, Oct 2026, 16 steps).
-Inputs (3 xlsx): Oracle ERP "IIVF Account Analysis" extract (accounts 51701-51704, one month), last month's
-statement, Rajeev's provision file. Output: statement workbook. Runs fully in the browser (offline, no backend).
+Automates Indira IVF finance's monthly provision workings, one page per provision, opened from a start page.
+Live: **Security** (SOP v1.0). Being added: **Housekeeping Expenses**, **Housekeeping Material**; about 8-10 more
+distinct workings follow from Nov-26 (finance listed 44 expense heads). Each page reads 3 xlsx files in the browser
+(ERP "IIVF Account Analysis" extract, last month's statement, Rajeev's provision file) and produces the statement
+workbook. No backend: finance data never leaves the user's computer.
 
 ## Owner's standing instructions (do not break these)
 1. **Follow the SOP exactly.** Do not add your own judgement. If something is unclear, ask; do not guess.
@@ -13,15 +15,32 @@ statement, Rajeev's provision file. Output: statement workbook. Runs fully in th
 3. **Must work for any month.** Never hard-code anything specific to the sample data.
 4. The owner is not a finance or Excel specialist. Explain changes in plain words.
 5. **Discuss before implementing** when a request changes rules or numbers.
+6. **Security is frozen.** `src/security/` is never edited and never uses the shared core. It may move onto the core
+   only with the owner's explicit approval AND a passing golden-output test. Never run `npm run approve:security` unasked.
+7. Each provision is ONE self-contained HTML file (ExcelJS and all code inlined): no external scripts, no network calls.
 
 ## Architecture
-- `src/engine.js`: all logic (UMD, runs in Node and the browser). Key functions: `load`, `analyse` (read + filter + tag),
-  `compute` (pivot, statement, checks, finance rules, points), `build` (Excel), `proposeFY` (year from narration).
-- `src/ui.html`: 2-step wizard (Upload -> Download). Placeholders `/*__EXCELJS__*/` and `/*__ENGINE__*/` are filled by `build.js`.
-- `index.html`: the built file the servers serve. Rebuild with `npm run build`; never edit it by hand.
-- Security: CSP `connect-src 'none'`, no unsafe-eval, DOM built with textContent only (no innerHTML).
+- Site root (what Nginx serves; all built by `npm run build`, never edited by hand):
+  `index.html` start page, `security.html`, later `<provision-id>.html`; `SHA256SUMS` lists their hashes.
+- `src/start/index.html`: start page template. Cards: Security (described in build.js) + one per `src/provisions/<id>/meta.json`.
+- `src/security/`: FROZEN copy of the approved tool. `engine.js` (all logic, UMD), `ui.html` (2-step wizard; placeholders
+  `/*__EXCELJS__*/`, `/*__ENGINE__*/`), `APPROVED.sha256` (the lock).
+- `src/core/` (from Step 2): shared code for Housekeeping and later provisions; started as a copy of Security's engine.
+- `src/provisions/<id>/` (from Step 2): settings + the parts that differ per SOP. Bundled with esbuild-wasm into one script.
+- Security of the pages: CSP `connect-src 'none'`, no unsafe-eval, DOM built with textContent only (no innerHTML).
 
-## Rules implemented (SOP step -> code)
+## Safeguards (all automatic)
+- **Fingerprint lock:** build.js builds security.html first from `src/security/` only; if its sha256 differs from
+  `APPROVED.sha256` the build stops and writes nothing. Approved: 3c90f0eca9db3c91e46801ec2de7029bd7c46653b261b94914701c054fc29e68.
+- **Golden output:** `test-data/golden/security_sep26.xlsx` is finance's approved Sep-26 download. `test/golden.js` compares
+  every part of the xlsx (values, formulas, saved results, styles, widths, merges); only created/modified time is ignored.
+  Every provision gets its own golden file once finance approves a month. Golden files hold finance data: git-ignored.
+- **Release check** (`npm run test:release`): lock, Security self-contained, site root = SHA256SUMS exactly, page names fit
+  the Nginx rule, both Nginx configs unchanged in their rules, start-page links, no network code, CSP present.
+- Versions pinned exactly: exceljs 4.4.0, esbuild-wasm 0.24.2, playwright 1.64.1. A different ExcelJS changes security.html.
+- `.gitattributes` keeps LF line endings everywhere, so the fingerprint is the same on Windows and on the servers.
+
+## Security rules implemented (SOP step -> code, src/security/engine.js)
 - Steps 1-4: extract must be one period, full month (From/To date params), accounts 51701-51704, no centre filter.
 - Step 5-6: "Exp Year" column. `proposeFY` tags a line only when the narration states month+year (or FY form like
   "June 2026-27", or a service period). "Journal Import Created" = current FY.
@@ -33,7 +52,7 @@ statement, Rajeev's provision file. Output: statement workbook. Runs fully in th
 - Steps 14-16: CF = Pro - Booking; YTD = FY{cur} Pro CF + Rajeev.
 - April (new FY) stops with a message: the SOP has no year-end roll-over rule yet.
 
-## Finance rules added Oct 2026 (NOT in SOP v1.0; ask finance to add them as v1.1)
+## Finance rules added Oct 2026 (NOT in Security SOP v1.0; ask finance to add them as v1.1)
 1. **Year not stated in the narration -> current FY** (FY of the posting month; FY28 from Apr-2027). No user step.
    Includes "month but no year" lines (finance confirmed FY27 for all). Lines are marked in Working "Remarks".
 2. **Negative carry-forward:** in each of FY{cur} Pro CF and FY{prev} Pro CF separately, negatives are set to 0 and their
@@ -42,7 +61,7 @@ statement, Rajeev's provision file. Output: statement workbook. Runs fully in th
    Before/adjustment/after table is on the "Points to check" sheet. Constant: `SOP.negCfTopN = 10`.
    If negatives exceed what the top 10 can absorb -> NOT READY (check 16 fails).
 
-## Output workbook
+## Security output workbook
 Sheets: Summary, Pivot, Provision_Rajeev, Working, Raw, Points to check (amber tab when non-empty).
 Summary: title A2 "Security Provision for the month of {Sept-26}", L2 =(I3+K3)/10^6, SUBTOTAL totals row 3, header row 4.
 16 checks (SOP Section 04 checks 1-5, completeness, negative-CF rule). Status READY / NOT READY.
@@ -50,12 +69,18 @@ Summary: title A2 "Security Provision for the month of {Sept-26}", L2 =(I3+K3)/1
 ## Gotchas
 - ExcelJS `cell.value` drops a formula result of 0: read `cell.model.result`. A formula with no saved value is an error, never 0.
 - Amounts in rupees are floats from the opening file; compare with EPS = 0.005. Bookings are summed in paise.
-- LibreOffice reuses cached values unless forced: use `test/lo_recalc_profile.xcu` (OOXMLRecalcMode=0). Prove it with a planted wrong value.
+- LibreOffice reuses cached values unless forced: use `test/security/lo_recalc_profile.xcu` (OOXMLRecalcMode=0). Prove it with a planted wrong value.
 - The next month's opening reader matches headers exactly ("YTD FY27", "FY26 Pro CF"). Never add another column whose
   normalised header equals those.
+- `test/security/run.js` "accepts all suggestions"; the page does not (the finance rule decides). For the golden test use
+  `test/security/golden_run.js`, which does exactly what the page does.
+- This PC: antivirus removes the native esbuild.exe (hence esbuild-wasm); Playwright cannot download its browser
+  (company TLS inspection), so browser tests run with `PW_CHANNEL=msedge` (installed Edge).
 
-## Testing (run all before any deploy)
-`npm run test:tagger` (56), `npm run test:scenarios` (20), `npm run test:sep` (compare with finance), `npm run test:e2e`.
+## Testing (run all before any commit or deploy)
+`npm run build`, then `npm test` (release check + Security: tagger 56, scenarios 20, Sep-26 compare, golden),
+`npm run test:security:e2e` and `npm run test:start:e2e` (browser; prefix `PW_CHANNEL=msedge` on this PC).
+Expected Sep-26 compare: 190 centres, 11 differ, all from one Payables bill finance excluded (details offline).
 Sample files go in `test-data/` (git-ignored; see test-data/README.md). Never commit finance data.
 
 ## Validation history
@@ -71,4 +96,5 @@ Sample files go in `test-data/` (git-ignored; see test-data/README.md). Never co
 
 ## Deploy
 See `deploy-ec2/DEPLOY_EC2.md`. UAT https://uatsecprov.indiraivf.in, production secprov.indiraivf.in.
-Workflow: change -> `npm run build` -> all tests -> commit + push -> `git pull` on UAT -> finance checks -> `git pull` on production.
+Workflow: change -> `npm run build` -> all tests -> commit + push -> on UAT `git pull` + `sha256sum -c SHA256SUMS`
+-> finance checks -> same on production. Nginx changes go in BEFORE the `git pull` that needs them.
