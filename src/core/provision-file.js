@@ -48,7 +48,8 @@ function readProvisionFile(wb, period, opts, spec) {
     if (k === 'state' && stateCol < 0) stateCol = c;
   }
   const errs = [];
-  if (codeCol < 0) errs.push(`Provision file (sheet "${ws.name}"): no "Storage Code" heading found.`);
+  if (codeCol < 0) errs.push(`Provision file (sheet "${ws.name}"): no "Storage Code" heading found.` + (spec.sheet.text
+    ? ` Upload Rajeev's combined provision file, the one with the ${spec.sheet.text} sheet and a "Storage Code" column, not a separate copy of the ${spec.noun} figures.` : ''));
   const amtCols = [...new Set(amtHits.map((h) => h.c))];
   if (amtCols.length === 0) errs.push(`Provision file (sheet "${ws.name}"): no "${spec.amount.text}" heading found.`);
   if (amtCols.length > 1) errs.push(`Provision file (sheet "${ws.name}"): more than one column is headed "${spec.amount.text}" (columns ${amtCols.map(colLetter).join(', ')}).`);

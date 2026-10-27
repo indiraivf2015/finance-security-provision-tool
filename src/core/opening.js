@@ -88,7 +88,12 @@ function readOpening(wb, period, opts, spec) {
     }
     if (!code.ok) { errs.push(`Last month's statement row ${r}: Cost Center ${code.why}.`); continue; }
     for (const col of cols) if (!nums[col.key].ok) errs.push(`Last month's statement row ${r} (cost centre ${code.v}): ${col.header} — ${nums[col.key].why}.`);
-    if (centres.has(code.v)) { errs.push(`Last month's statement: cost centre ${code.v} appears more than once (rows ${centres.get(code.v).row} and ${r}).`); continue; }
+    // Never added together automatically: a second row can be a hand-typed provision whose treatment finance must decide.
+    if (centres.has(code.v)) {
+      const first = centres.get(code.v); const nm = first.name ? ` (${first.name})` : '';
+      errs.push(`Last month's statement: cost centre ${code.v}${nm} appears more than once (rows ${first.row} and ${r}). The statement must have one row per cost centre, and the tool does not add rows together by itself. Ask finance how this centre's opening should be carried forward, correct last month's statement, and upload it again.`);
+      continue;
+    }
     const v = {}, blank = {};
     for (const col of cols) { v[col.key] = nums[col.key].ok ? (nums[col.key].v || 0) : 0; blank[col.key] = nums[col.key].ok && nums[col.key].v === null; }
     centres.set(code.v, { code: code.v, name: s.nameCol > 0 ? infoText(row[s.nameCol]) : '', row: r, v, blank });

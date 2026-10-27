@@ -814,7 +814,9 @@ var ProvisionEngine = (() => {
           }
           for (const col of cols) if (!nums[col.key].ok) errs.push(`Last month's statement row ${r} (cost centre ${code.v}): ${col.header} — ${nums[col.key].why}.`);
           if (centres.has(code.v)) {
-            errs.push(`Last month's statement: cost centre ${code.v} appears more than once (rows ${centres.get(code.v).row} and ${r}).`);
+            const first = centres.get(code.v);
+            const nm = first.name ? ` (${first.name})` : "";
+            errs.push(`Last month's statement: cost centre ${code.v}${nm} appears more than once (rows ${first.row} and ${r}). The statement must have one row per cost centre, and the tool does not add rows together by itself. Ask finance how this centre's opening should be carried forward, correct last month's statement, and upload it again.`);
             continue;
           }
           const v = {}, blank = {};
@@ -883,7 +885,7 @@ var ProvisionEngine = (() => {
           if (k === "state" && stateCol < 0) stateCol = c;
         }
         const errs = [];
-        if (codeCol < 0) errs.push(`Provision file (sheet "${ws.name}"): no "Storage Code" heading found.`);
+        if (codeCol < 0) errs.push(`Provision file (sheet "${ws.name}"): no "Storage Code" heading found.` + (spec.sheet.text ? ` Upload Rajeev's combined provision file, the one with the ${spec.sheet.text} sheet and a "Storage Code" column, not a separate copy of the ${spec.noun} figures.` : ""));
         const amtCols = [...new Set(amtHits.map((h) => h.c))];
         if (amtCols.length === 0) errs.push(`Provision file (sheet "${ws.name}"): no "${spec.amount.text}" heading found.`);
         if (amtCols.length > 1) errs.push(`Provision file (sheet "${ws.name}"): more than one column is headed "${spec.amount.text}" (columns ${amtCols.map(colLetter).join(", ")}).`);
@@ -1748,7 +1750,7 @@ var ProvisionEngine = (() => {
           columns: [{ key: "ytd", header: `YTD ${fyLabelHeader(period.cur)}`, choosable: true }, { key: "cf", header: `${fyLabelHeader(period.prev)} Pro CF` }],
           aprilNote: true
         }),
-        provisionFile: { sheet: { test: /^\s*hk(?![a-z])/i }, amount: { startsWith: "manpower", text: "Manpower" }, noun: "housekeeping" },
+        provisionFile: { sheet: { test: /^\s*hk(?![a-z])/i, text: '"HK <Mon-YY>"' }, amount: { startsWith: "manpower", text: "Manpower" }, noun: "housekeeping" },
         stopInApril: false,
         // as Security: in April last month's statement has no "YTD FY{new}" column, and the reader stops with the April note
         compute: (state) => fyStatement.compute(state, statement),

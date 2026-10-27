@@ -200,7 +200,7 @@ function make(negativeCfRule) {
     toolName: TOOL, version: VERSION, sopVersion: 'SOP v1.0 · October 2026',
     extract: { accounts: [51611], accountsText: 'account 51611', glParams: { from: 51611, to: 51611 }, multipleAccountsAllowed: false },
     opening: () => ({ columns: [{ key: 'ytd', header: 'YTD', choosable: true }], aprilNote: false }),
-    provisionFile: { sheet: { test: /^\s*hk(?![a-z])/i }, amount: { startsWith: 'materials', text: 'Materials' }, noun: 'housekeeping' },
+    provisionFile: { sheet: { test: /^\s*hk(?![a-z])/i, text: '"HK <Mon-YY>"' },amount: { startsWith: 'materials', text: 'Materials' }, noun: 'housekeeping' },
     stopInApril: true,
     compute: (state) => compute(state, rule),
     buildWorkbook: (state, R, meta) => buildWorkbook(state, R, meta, rule),

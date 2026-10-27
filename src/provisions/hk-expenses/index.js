@@ -51,7 +51,7 @@ module.exports = createEngine({
     columns: [{ key: 'ytd', header: `YTD ${fyLabelHeader(period.cur)}`, choosable: true }, { key: 'cf', header: `${fyLabelHeader(period.prev)} Pro CF` }],
     aprilNote: true,
   }),
-  provisionFile: { sheet: { test: /^\s*hk(?![a-z])/i }, amount: { startsWith: 'manpower', text: 'Manpower' }, noun: 'housekeeping' },
+  provisionFile: { sheet: { test: /^\s*hk(?![a-z])/i, text: '"HK <Mon-YY>"' },amount: { startsWith: 'manpower', text: 'Manpower' }, noun: 'housekeeping' },
   stopInApril: false, // as Security: in April last month's statement has no "YTD FY{new}" column, and the reader stops with the April note
   compute: (state) => fyStatement.compute(state, statement),
   buildWorkbook: (state, R, meta) => fyStatement.buildWorkbook(state, R, meta, statement, VERSION),
