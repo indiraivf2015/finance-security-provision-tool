@@ -47,6 +47,19 @@ workbook. No backend: finance data never leaves the user's computer.
 - NOT YET VERIFIED (no real HK extract yet): the report's GL parameter block for four non-contiguous accounts (not checked
   until seen), and the SOP's statement totals. Verified: every Part D figure and both Part E worked examples (test-data/hk-expected.json).
 
+## Housekeeping Material (src/provisions/hk-material, SOP v1.0 Oct 2026; own simpler statement)
+- Account 51611 only; report "GL Code From/To" must both be 51611; "Multiple Accounts" must be blank.
+- Steps 5-9 as Security (Step 7 keeps "IIVF P2P" and "Payables"); no year -> current FY.
+- Only current-FY bookings reach the statement (pivot filter Exp Year = FY{cur}); earlier-FY lines stay in Working and are
+  each listed in Points to check (owner). SOP check 3 read as: pivot total = current-FY Working total, Booking total = pivot total.
+- Rajeev: sheet "HK <Mon-YY>", column by heading "Materials", taken AS IS (no GST conversion); same code rows added.
+- Statement "Material Provision for the month of {Sept-26}": Cost Center | Cost Center Name | {Aug}-Provision | {Sept}-Booking |
+  Prov CF | {Sept}-Provision | YTD. Opening = last month's "YTD". Exact values kept, shown without paise (owner).
+- Stops in April (owner: no year-end rule in the SOP).
+- **Negative Prov CF: `NEGATIVE_CF_RULE` in index.js, AWAITING THE OWNER'S DECISION.** null = SOP Step 14 (carry the minus
+  sign, listed in Points to check); { topN: 10 } = finance's rule. Both ways are tested. 10 checks (12 with the rule).
+- Verified: Materials total and the three worked examples (one with a negative Prov CF). Not yet: SOP statement totals.
+
 ## Safeguards (all automatic)
 - **Fingerprint lock:** build.js builds security.html first from `src/security/` only; if its sha256 differs from
   `APPROVED.sha256` the build stops and writes nothing. Approved: 3c90f0eca9db3c91e46801ec2de7029bd7c46653b261b94914701c054fc29e68.
@@ -97,8 +110,8 @@ Summary: title A2 "Security Provision for the month of {Sept-26}", L2 =(I3+K3)/1
 
 ## Testing (run all before any commit or deploy)
 `npm run build`, then `npm test` (release check; Security: tagger 56, scenarios 20, Sep-26 compare, golden; core: tagger
-parity + core-vs-approved-Security parity (1921 Summary figures); Housekeeping Expenses: 24 scenarios + SOP figures), then the
-browser tests `npm run test:security:e2e`, `npm run test:hk-expenses:e2e`, `npm run test:start:e2e` (prefix `PW_CHANNEL=msedge` on this PC).
+parity + core-vs-approved-Security parity (1921 Summary figures); Housekeeping Expenses: 24 scenarios + SOP figures; Housekeeping Material: 20 scenarios + SOP figures), then the
+browser tests `npm run test:e2e` (all four browser tests; prefix `PW_CHANNEL=msedge` on this PC).
 Any change under `src/core/` must keep `test:core` passing: it proves the core still reproduces finance's approved Security statement.
 Provision tests use made-up files built by `test/fixtures.js`; SOP figures (finance data) are in test-data/hk-expected.json.
 Expected Sep-26 compare: 190 centres, 11 differ, all from one Payables bill finance excluded (details offline).

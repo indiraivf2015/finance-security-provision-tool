@@ -1813,7 +1813,7 @@ var ProvisionEngine = (() => {
   }
   function icon(id) { const s = document.createElementNS(SVGNS, 'svg'); s.setAttribute('class', 'i'); const u = document.createElementNS(SVGNS, 'use'); u.setAttribute('href', '#' + id); s.appendChild(u); return s; }
   const clear = (n) => { while (n.firstChild) n.removeChild(n.firstChild); };
-  const inr = (x) => E.fmtINR(x);
+  const inr = (x) => E.fmtINR(x, U.decimals); // U.decimals: 0 = whole rupees on screen (exact values are kept)
 
   function showPage(n) {
     ['sec-files', 'sec-gen'].forEach((id, i) => $(id).classList.toggle('hidden', i + 1 !== n));
