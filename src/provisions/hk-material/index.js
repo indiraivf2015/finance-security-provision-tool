@@ -24,10 +24,11 @@ const { writeRaw, writeWorking, writePoints } = require('../../core/sheets');
 const VERSION = '1.0.0';
 const TOOL = 'Housekeeping Material Provision Tool';
 
-// ⚠ AWAITING THE OWNER'S DECISION — do not change without it.
-// SOP Step 14 says a negative Prov CF is carried "with its minus sign" (null below = SOP as written).
-// Finance said to apply the negative carry-forward rule ({ topN: 10 }: set to 0, taken from the 10 highest in proportion).
-const NEGATIVE_CF_RULE = null;
+// Negative Prov CF. Owner's decision (Oct 2026): apply finance's negative carry-forward rule, as for Security and
+// Housekeeping Expenses: set to 0, taken from the 10 centres with the highest Prov CF, in proportion; column total unchanged.
+// This departs from SOP v1.0 Step 14 ("carry it with its minus sign"); finance to update the Material SOP to match.
+// null here would mean the SOP as written. Do not change without the owner's decision.
+const NEGATIVE_CF_RULE = { topN: 10 };
 
 const monthWord = (y, m) => (m === 9 ? 'Sept' : MONTH_ABBR[m]); // the SOP's headers: "Aug-Provision", "Sept-Booking"
 const NEG_COL = [{ sopF: 'cfSop', adjF: 'adj', finF: 'cf', label: 'Prov CF' }];

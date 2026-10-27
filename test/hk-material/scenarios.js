@@ -103,6 +103,11 @@ test('Rule way: negative Prov CF set to 0, taken from the top 10 in proportion, 
   const fails = R.checks.filter((c) => c.status === 'FAIL');
   return near(s.cf, 0) && R.adjInfo.adj.recipients.length === 10 && near(before, after) && R.checks.length === 12 && !fails.length ? true : JSON.stringify({ cf: s.cf, before, after, n: R.checks.length, fails });
 });
+test('The page uses finance\'s negative carry-forward rule (owner\'s decision, Oct 2026)', async () => {
+  const PAGE = require('../../src/provisions/hk-material');
+  const { R } = await run(null, null, PAGE);
+  return PAGE.NEGATIVE_CF_RULE && PAGE.NEGATIVE_CF_RULE.topN === 10 && R.adjInfo && R.adjInfo.adj.applied && near(row(R, 8005).cf, 0) ? true : JSON.stringify(PAGE.NEGATIVE_CF_RULE);
+});
 test('Statement title, the SOP\'s 7 columns, amounts shown without paise but kept exact', async () => {
   const { buffer } = await run(); const ws = await sheetOf(buffer, 'Summary');
   const t = cached(ws.getCell('A2')); const h = ws.getRow(4).values.slice(2).join('|');

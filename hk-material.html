@@ -1415,7 +1415,7 @@ var ProvisionEngine = (() => {
       var { writeRaw, writeWorking, writePoints } = require_sheets();
       var VERSION = "1.0.0";
       var TOOL = "Housekeeping Material Provision Tool";
-      var NEGATIVE_CF_RULE = null;
+      var NEGATIVE_CF_RULE = { topN: 10 };
       var monthWord = (y, m) => m === 9 ? "Sept" : MONTH_ABBR[m];
       var NEG_COL = [{ sopF: "cfSop", adjF: "adj", finF: "cf", label: "Prov CF" }];
       function labels(period) {

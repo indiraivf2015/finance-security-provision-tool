@@ -56,8 +56,9 @@ workbook. No backend: finance data never leaves the user's computer.
 - Statement "Material Provision for the month of {Sept-26}": Cost Center | Cost Center Name | {Aug}-Provision | {Sept}-Booking |
   Prov CF | {Sept}-Provision | YTD. Opening = last month's "YTD". Exact values kept, shown without paise (owner).
 - Stops in April (owner: no year-end rule in the SOP).
-- **Negative Prov CF: `NEGATIVE_CF_RULE` in index.js, AWAITING THE OWNER'S DECISION.** null = SOP Step 14 (carry the minus
-  sign, listed in Points to check); { topN: 10 } = finance's rule. Both ways are tested. 10 checks (12 with the rule).
+- **Negative Prov CF: finance's rule** (`NEGATIVE_CF_RULE = { topN: 10 }`, owner's decision Oct 2026): set to 0, taken from
+  the 10 highest Prov CF centres in proportion, table in Points to check. Departs from SOP v1.0 Step 14 (minus sign): ask finance
+  to update the Material SOP. Both ways stay tested; the SOP worked-example test runs the SOP way on purpose. 12 checks.
 - Verified: Materials total and the three worked examples (one with a negative Prov CF). Not yet: SOP statement totals.
 
 ## Safeguards (all automatic)
@@ -127,6 +128,8 @@ Sample files go in `test-data/` (git-ignored; see test-data/README.md). Never co
 3. Year-end roll-over rule for April.
 4. Is "top 10, in proportion" the confirmed split for negatives?
 5. Add both Oct-2026 rules to the SOP (v1.1).
+6. Housekeeping Material SOP v1.0 Step 14 says carry a negative Prov CF with its minus sign; the owner chose finance's
+   negative carry-forward rule (as for Security and Housekeeping Expenses). Ask finance to update the Material SOP.
 
 ## Deploy
 See `deploy-ec2/DEPLOY_EC2.md`. UAT https://uatsecprov.indiraivf.in, production secprov.indiraivf.in.

@@ -7,7 +7,7 @@ Automates Indira IVF finance's monthly provision workings. One page per provisio
 | `index.html` | Start page | |
 | `security.html` | Security (SOP v1.0, Oct 2026, plus two finance rules) | Live, approved by finance. Frozen. |
 | `hk-expenses.html` | Housekeeping Expenses (SOP v1.1, Oct 2026) | Built; awaiting finance's sample HK extract to verify the totals |
-| `hk-material.html` | Housekeeping Material (SOP v1.0, Oct 2026) | Built; negative carry-forward setting awaiting owner's decision; awaiting finance's sample extract |
+| `hk-material.html` | Housekeeping Material (SOP v1.0, Oct 2026) | Built; awaiting finance's sample HK extract to verify the totals |
 
 Each page reads 3 Excel files and produces the statement workbook. Everything runs in the browser: no backend,
 no network access, no data leaves the computer. Each page is one self-contained HTML file (ExcelJS inlined).
