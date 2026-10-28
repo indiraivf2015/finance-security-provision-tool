@@ -553,7 +553,7 @@ var ProvisionEngine = (() => {
   var require_extract = __commonJS({
     "src/core/extract.js"(exports, module) {
       "use strict";
-      var { InputError, norm, parseMonthYear, parseDateText, fyOf, monthLabel, hasMoreThan2Decimals } = require_common();
+      var { InputError, norm, parseMonthYear, parseDateText, fyOf, monthLabel, hasMoreThan2Decimals, fmtINR } = require_common();
       var { infoText, infoNumber, infoInteger, sheetRows } = require_excel();
       var EXTRACT_REQUIRED = {
         periodname: "PERIOD_NAME",
@@ -643,9 +643,16 @@ var ProvisionEngine = (() => {
         if (periods.length !== 1) throw new InputError([`ERP extract: it contains more than one period (${periods.join(", ")}). Download one month only (SOP Step 3).`]);
         const pm = parseMonthYear(periods[0]);
         if (!pm) throw new InputError([`ERP extract: PERIOD_NAME "${periods[0]}" is not a month (expected e.g. "Sep-26").`]);
-        const badAcc = [...new Set(rows.filter((x) => !spec.accounts.includes(x.seg2)).map((x) => x.seg2))].sort((a, b) => a - b);
-        if (badAcc.length) throw new InputError([`ERP extract: it contains account(s) ${badAcc.join(", ")}. This working uses only ${spec.accountsText} (SOP Step 2). Re-run the report with the correct accounts.`]);
+        const family = spec.familyAccounts || [];
+        const badAcc = [...new Set(rows.filter((x) => !spec.accounts.includes(x.seg2) && !family.includes(x.seg2)).map((x) => x.seg2))].sort((a, b) => a - b);
+        if (badAcc.length) throw new InputError([`ERP extract: it contains account(s) ${badAcc.join(", ")}. This working uses only ${spec.accountsText} (SOP Step 2)` + (family.length ? `; a combined report for accounts ${spec.familyText} is also accepted` : "") + ". Re-run the report with the correct accounts."]);
+        const skipped = rows.filter((x) => !spec.accounts.includes(x.seg2));
+        const own = rows.filter((x) => spec.accounts.includes(x.seg2));
         const period = { label: periods[0].trim(), display: monthLabel(pm.y, pm.m), y: pm.y, m: pm.m, cur: fyOf(pm.y, pm.m), prev: (fyOf(pm.y, pm.m) + 99) % 100 };
+        const NOT_ORIGINAL = "This doesn't look like the original ERP download for the full month.";
+        if (spec.fullMonthDownload && (!params.found || !params.from || !params.to)) {
+          throw new InputError([`ERP extract: ${NOT_ORIGINAL} The report title and parameters (From Date, To Date) are missing at the top of the file. Upload the "IIVF Account Analysis" file exactly as the ERP gives it (SOP Steps 2–4).`]);
+        }
         const paramErrors = params.problems.slice();
         if (params.from && (params.from.y !== pm.y || params.from.m !== pm.m || params.from.d !== 1)) paramErrors.push(`report "From Date" ${params.fromText} is not the first day of ${period.label}`);
         if (params.to) {
@@ -656,15 +663,27 @@ var ProvisionEngine = (() => {
           if (params.glFrom !== null && params.glFrom !== spec.glParams.from) paramErrors.push(`report "GL Code From" is ${params.glFrom}, SOP says ${spec.glParams.from}`);
           if (params.glTo !== null && params.glTo !== spec.glParams.to) paramErrors.push(`report "GL Code To" is ${params.glTo}, SOP says ${spec.glParams.to}`);
         }
-        if (paramErrors.length) throw new InputError(paramErrors.map((e) => `ERP extract: ${e} (SOP Steps 2–3).`));
-        return { sheetName: g.name, headerRow: hdr, headers, col, rows, period, params, rawSheet };
+        if (spec.accountsInParams) {
+          const listed = (params.multipleAccounts.match(/\d{5}/g) || []).map(Number);
+          const ranged = params.glFrom !== null && params.glTo !== null;
+          if (ranged || listed.length) {
+            const missing = spec.accounts.filter((a) => !(ranged && a >= params.glFrom && a <= params.glTo) && !listed.includes(a));
+            if (missing.length) paramErrors.push(`the report parameters (GL Code From/To ${params.glFrom ?? "-"}–${params.glTo ?? "-"}${listed.length ? ", Multiple Accounts " + params.multipleAccounts : ""}) do not include account(s) ${missing.join(", ")}, so their lines would be missing`);
+          }
+        }
+        if (paramErrors.length) {
+          const fullMonth = spec.fullMonthDownload && paramErrors.some((e) => /From Date|To Date/.test(e));
+          throw new InputError(paramErrors.map((e) => `ERP extract: ${fullMonth && /From Date|To Date/.test(e) ? NOT_ORIGINAL + " " : ""}${e} (SOP Steps 2–3).`));
+        }
+        return { sheetName: g.name, headerRow: hdr, headers, col, rows: own, skipped, period, params, rawSheet };
       }
       function readExtractParams(g, hdr, spec) {
-        const out = { from: null, to: null, fromText: "", toText: "", glFrom: null, glTo: null, multipleAccounts: "", problems: [] };
+        const out = { found: false, from: null, to: null, fromText: "", toText: "", glFrom: null, glTo: null, multipleAccounts: "", problems: [] };
         for (let r = 1; r < hdr && r < g.rowCount; r++) {
           const names = [];
           for (let c = 1; c <= g.colCount; c++) names[c] = norm(infoText(g.rows[r][c]));
           if (names.indexOf("fromdate") < 1) continue;
+          out.found = true;
           const vals = g.rows[r + 1];
           const pick = (key) => {
             const i = names.indexOf(key);
@@ -706,7 +725,20 @@ var ProvisionEngine = (() => {
         }
         return out;
       }
-      module.exports = { readExtract, EXTRACT_REQUIRED };
+      function skippedSummary(extract, accountsText) {
+        const by = /* @__PURE__ */ new Map();
+        for (const r of extract.skipped || []) {
+          const o = by.get(r.seg2) || { account: r.seg2, n: 0, totalP: 0 };
+          o.n++;
+          o.totalP += Math.round(r.bal * 100);
+          by.set(r.seg2, o);
+        }
+        const list = [...by.values()].sort((a, b) => a.account - b.account);
+        const totalP = list.reduce((a, o) => a + o.totalP, 0);
+        const text = list.length ? `The ERP download is a combined report. ${list.map((o) => `${o.n} line(s) of account ${o.account} (total ${fmtINR(o.totalP / 100)})`).join(", ")} belong to the other Housekeeping working and were skipped; this working uses only ${accountsText}. They stay in the Raw sheet.` : "";
+        return { list, totalP, text };
+      }
+      module.exports = { readExtract, skippedSummary, EXTRACT_REQUIRED };
     }
   });
 
@@ -799,6 +831,7 @@ var ProvisionEngine = (() => {
         }
         const centres = /* @__PURE__ */ new Map();
         const order = [];
+        const manualRows = [];
         for (let r = s.hdr + 1; r <= s.g.rowCount; r++) {
           const row = s.g.rows[r];
           const code = infoInteger(row[s.cc]);
@@ -820,35 +853,30 @@ var ProvisionEngine = (() => {
           }
           if (centres.has(code.v)) {
             const first = centres.get(code.v);
-            if (spec.mergeDuplicates) {
-              for (const col of cols) {
-                first.v[col.key] += v[col.key];
-                first.blank[col.key] = first.blank[col.key] && blank[col.key];
-              }
-              first.parts.push({ row: r, v });
+            if (spec.manualRows) {
+              manualRows.push({ code: code.v, name: s.nameCol > 0 ? infoText(row[s.nameCol]) : first.name, row: r, v });
               continue;
             }
             const nm = first.name ? ` (${first.name})` : "";
             errs.push(`Last month's statement: cost centre ${code.v}${nm} appears more than once (rows ${first.row} and ${r}). The statement must have one row per cost centre, and the tool does not add rows together by itself. Ask finance how this centre's opening should be carried forward, correct last month's statement, and upload it again.`);
             continue;
           }
-          centres.set(code.v, { code: code.v, name: s.nameCol > 0 ? infoText(row[s.nameCol]) : "", row: r, v: { ...v }, blank, parts: [{ row: r, v }] });
+          centres.set(code.v, { code: code.v, name: s.nameCol > 0 ? infoText(row[s.nameCol]) : "", row: r, v, blank });
           order.push(code.v);
         }
         if (errs.length) throw new InputError(errs.slice(0, 50));
         if (!centres.size) throw new InputError(["Last month's statement: no cost-centre rows found under the headings."]);
         const colLetters = {};
         for (const col of cols) colLetters[col.key] = colLetter(use[col.key]);
-        const merged = [...centres.values()].filter((o) => o.parts.length > 1);
-        return { sheet: s.g.name, headerRow: s.hdr, colLetters, title: stmtTitle, monthConfirmedByUser: !stmtMonth, centres, order, columns: cols, merged, label: monthLabel(pm.y, pm.m) };
+        return { sheet: s.g.name, headerRow: s.hdr, colLetters, title: stmtTitle, monthConfirmedByUser: !stmtMonth, centres, order, manualRows, columns: cols, label: monthLabel(pm.y, pm.m) };
       }
-      function mergedPointText(o, columns) {
-        const [c0, ...rest] = columns;
-        const nm = o.name || "Cost centre " + o.code;
-        const fig = (c) => o.parts.map((p) => fmtINR(p.v[c.key])).join(" + ");
-        return `${nm} appears ${o.parts.length} times in last month's statement (${fig(c0)}); rows added together. Rows ${o.parts.map((p) => p.row).join(", ")}: ${c0.header} ${fig(c0)} = ${fmtINR(o.v[c0.key])}` + rest.map((c) => `; ${c.header} ${fig(c)} = ${fmtINR(o.v[c.key])}`).join("") + ".";
+      function manualRowText(m, columns) {
+        const nm = m.name || "Cost centre " + m.code;
+        const figs = columns.filter((c, i) => i === 0 || Math.abs(m.v[c.key]) > 5e-3);
+        const fig = figs.length === 1 ? fmtINR(m.v[figs[0].key]) : figs.map((c) => `${c.header} ${fmtINR(m.v[c.key])}`).join("; ");
+        return `${nm} has a manually added row (${fig}) carried forward unchanged, as in last month's statement (row ${m.row}). No bookings, no Rajeev provision and no negative carry-forward adjustment on this row; the centre's normal row works as usual.`;
       }
-      module.exports = { readOpening, mergedPointText };
+      module.exports = { readOpening, manualRowText };
     }
   });
 
@@ -1457,7 +1485,8 @@ var ProvisionEngine = (() => {
       var { applyNegativeCarryForward, checkList } = require_rules();
       var { isWrongKind, GST_RECLASS_CREATOR } = require_clean();
       var { writeRaw, writeWorking, writePoints } = require_sheets();
-      var { mergedPointText } = require_opening();
+      var { skippedSummary } = require_extract();
+      var { manualRowText } = require_opening();
       var NEG_COLUMNS = (period) => [
         { sopF: "cfCurSop", adjF: "adjCur", finF: "cfCur", label: `${fyLabelHeader(period.cur)} Pro CF` },
         { sopF: "cfPrevSop", adjF: "adjPrev", finF: "cfPrev", label: `${fyLabelHeader(period.prev)} Pro CF` }
@@ -1509,6 +1538,10 @@ var ProvisionEngine = (() => {
           s.cfPrev = s.cfPrevSop + s.adjPrev;
           s.ytd = s.cfCur + s.raj;
         }
+        for (const m of opening.manualRows || []) {
+          const proCur = m.v.ytd, proPrev = m.v.cf;
+          stmt.push({ code: m.code, name: m.name, manual: true, manualRow: m.row, proCur, proPrev, bkCur: 0, bkPrev: 0, cfCurSop: proCur, cfPrevSop: proPrev, adjCur: 0, adjPrev: 0, cfCur: proCur, cfPrev: proPrev, raj: 0, ytd: proCur, isNew: false });
+        }
         const sum = (f) => stmt.reduce((a, s) => a + s[f], 0);
         const T = { proCur: sum("proCur"), proPrev: sum("proPrev"), bkCur: sum("bkCur"), bkPrev: sum("bkPrev"), cfCur: sum("cfCur"), cfPrev: sum("cfPrev"), raj: sum("raj"), ytd: sum("ytd"), adjCur: sum("adjCur"), adjPrev: sum("adjPrev") };
         T.total = T.cfPrev + T.ytd;
@@ -1516,12 +1549,13 @@ var ProvisionEngine = (() => {
         const keptTotalP = kept.reduce((a, r) => a + toPaise(r.bal), 0);
         const removedTotalP = removed.reduce((a, r) => a + toPaise(r.bal), 0);
         const extractTotalP = extract.rows.reduce((a, r) => a + toPaise(r.bal), 0);
+        const skip = skippedSummary(extract, cfg.accountsText);
         let pivotTotalP = 0;
         for (const p of pivot.values()) pivotTotalP += p.cur + p.prev;
         const rajIn = rajeev.lines.reduce((a, l) => a + l.amount, 0);
         const rajFinal = rajeev.lines.reduce((a, l) => a + l.final, 0);
         let openYtd = 0, openCf = 0;
-        for (const o of opening.centres.values()) {
+        for (const o of [...opening.centres.values(), ...opening.manualRows || []]) {
           openYtd += o.v.ytd;
           openCf += o.v.cf;
         }
@@ -1537,7 +1571,8 @@ var ProvisionEngine = (() => {
         add("04 · check 5", `Totals row: ${C} Pro CF + ${period.display} Pro as per Rajeev = YTD ${C}`, T.cfCur + T.raj, T.ytd);
         add("04 · check 5", `Rajeev total in the statement = total of the GST conversion (Part D, ${cfg.amountText} only)`, rajFinal, T.raj);
         if (cfg.summaryBlock) add("04 · check 6", `Summary block: ${Pv} Pro CF + YTD ${C} = Total, both lines equal the column totals`, T.cfPrev + T.ytd, T.total);
-        add("Completeness", "ERP extract total = Working total + Removed lines total (no line lost)", extractTotalP / 100, (keptTotalP + removedTotalP) / 100);
+        if (skip.list.length) add("Completeness", "ERP extract total = Working total + Removed lines total + other Housekeeping account lines skipped (no line lost)", (extractTotalP + skip.totalP) / 100, (keptTotalP + removedTotalP + skip.totalP) / 100);
+        else add("Completeness", "ERP extract total = Working total + Removed lines total (no line lost)", extractTotalP / 100, (keptTotalP + removedTotalP) / 100);
         add("Completeness", "Statement bookings (both years) = Working total (every booked centre is in the statement)", keptTotalP / 100, T.bkCur + T.bkPrev);
         add("Completeness", `Provision file: total of the "${cfg.amountText}" column = GST conversion input total`, rajeev.columnTotal, rajIn);
         add("Completeness · Step 13", `Opening ${C} Pro = last month's YTD ${C} total`, openYtd, T.proCur);
@@ -1550,6 +1585,10 @@ var ProvisionEngine = (() => {
         const points = [];
         const pt = (code, name, point, amount, check) => points.push({ code, name, point, amount: amount == null ? null : Math.round(amount * 100) / 100, check });
         for (const s of stmt) {
+          if (s.manual) {
+            pt(s.code, s.name, manualRowText(opening.manualRows.find((m) => m.row === s.manualRow), opening.columns), s.ytd, "For information. Finance adds this row by hand; it stays until finance removes it from the statement.");
+            continue;
+          }
           if (!rajByCode.has(s.code)) {
             const bk = s.bkCur + s.bkPrev;
             pt(s.code, s.name, `Not in Rajeev's provision file, so "${period.display} Pro as per Rajeev" is 0.` + (Math.abs(bk) > EPS ? ` ${fmtINR(bk)} was booked for this centre this month.` : ""), Math.abs(bk) > EPS ? bk : null, "Check with Rajeev whether this centre should have a provision this month.");
@@ -1558,10 +1597,11 @@ var ProvisionEngine = (() => {
         }
         for (const [code, n] of rajCount) if (n > 1) pt(code, (stmt.find((s) => s.code === code) || {}).name || "", `Listed ${n} times in Rajeev's provision file; the rows are added together (one statement row per centre).`, rajByCode.get(code), "For information.");
         for (const b of rajeev.blanks) pt(b.code, (stmt.find((s) => s.code === b.code) || {}).name || "", `Rajeev's provision file row ${b.row}: "${cfg.amountText}" is blank, taken as 0.`, null, "Check whether an amount is missing in Rajeev's file.");
-        for (const o of opening.merged || []) pt(o.code, o.name, mergedPointText(o, opening.columns), o.v.ytd, "Confirm with finance that these rows belong to the same centre and should be carried forward together.");
+        if (skip.text) pt(null, "", skip.text, skip.totalP / 100, "For information. Upload the same file to the other Housekeeping tool.");
         for (const o of opening.centres.values()) if (o.blank.ytd || o.blank.cf) pt(o.code, o.name, `Last month's statement row ${o.row}: ${o.blank.ytd ? "YTD " + C : ""}${o.blank.ytd && o.blank.cf ? " and " : ""}${o.blank.cf ? Pv + " Pro CF" : ""} is blank, taken as 0.`, null, "Check whether last month's balance is missing.");
         if (adjInfo) {
           for (const s of stmt) {
+            if (s.manual) continue;
             for (const { sopF, adjF, label } of NEG_COLUMNS(period)) {
               if (s[sopF] >= -EPS) continue;
               const inf = adjInfo[adjF];
@@ -1650,7 +1690,7 @@ var ProvisionEngine = (() => {
         const rEnd = 3 + rajeev.lines.length;
         wsRaj.getCell("F2").value = { formula: `SUM(F4:F${rEnd})`, result: R.totals.rajIn };
         wsRaj.getRow(3).values = [null, null, null, null, null, `${cfg.amountText} (per month, with GST)`, "Basic", `With ${Math.round((g.finalFactor - 1) * 1e3) / 10}%GST`, "Cost Center Name (Summary)"];
-        const nameOf = new Map(R.stmt.map((s) => [s.code, s.name]));
+        const nameOf = new Map(R.stmt.filter((s) => !s.manual).map((s) => [s.code, s.name]));
         rajeev.lines.forEach((l, i) => {
           const rn = 4 + i;
           wsRaj.getRow(rn).values = [
@@ -1689,6 +1729,10 @@ var ProvisionEngine = (() => {
         const PIV = (c) => `Pivot!$${c}$5:$${c}$${pEnd}`;
         R.stmt.forEach((s, i) => {
           const rn = first + i;
+          if (s.manual) {
+            wsSum.getRow(rn).values = [null, s.code, s.name, s.proCur, s.proPrev, 0, 0, { formula: `D${rn}-F${rn}`, result: s.cfCur }, { formula: `E${rn}-G${rn}`, result: s.cfPrev }, 0, { formula: `H${rn}+J${rn}`, result: s.ytd }];
+            return;
+          }
           wsSum.getRow(rn).values = [
             null,
             s.code,
@@ -1774,6 +1818,7 @@ var ProvisionEngine = (() => {
         title: (L) => `Housekeeping Exp – Provision for the month of ${L}`,
         pivotByVendor: true,
         amountText: "Manpower",
+        accountsText: "accounts 51610, 51612, 51613 and 51614",
         gst: { divisor: 118, basicFactor: 100, finalFactor: 1.135 },
         negativeCarryForward: { topN: 10 },
         summaryBlock: true,
@@ -1787,15 +1832,20 @@ var ProvisionEngine = (() => {
           accounts: [51610, 51612, 51613, 51614],
           accountsText: "accounts 51610, 51612, 51613 and 51614",
           glParams: null,
-          // not checked until a real extract shows how the report lists the four accounts
-          multipleAccountsAllowed: true
+          // accountsInParams checks instead: GL Code From/To or Multiple Accounts must include the four accounts
+          multipleAccountsAllowed: true,
           // the SOP selects four separate accounts
+          familyAccounts: [51610, 51611, 51612, 51613, 51614],
+          familyText: "51610–51614",
+          // combined report (finance's practice, approved Oct 2026)
+          fullMonthDownload: true,
+          accountsInParams: true
         },
         opening: (period) => ({
           columns: [{ key: "ytd", header: `YTD ${fyLabelHeader(period.cur)}`, choosable: true }, { key: "cf", header: `${fyLabelHeader(period.prev)} Pro CF` }],
           aprilNote: true,
-          mergeDuplicates: true
-          // owner's decision (Oct 2026): a centre on several rows is added together and listed on "Points to check"
+          manualRows: true
+          // a centre's extra rows are manual fixed rows (finance's decision, 28-Oct-2026)
         }),
         provisionFile: { sheet: { test: /^\s*hk(?![a-z])/i, text: '"HK <Mon-YY>"' }, amount: { startsWith: "manpower", text: "Manpower" }, noun: "housekeeping" },
         stopInApril: false,
@@ -1805,7 +1855,7 @@ var ProvisionEngine = (() => {
         ui: {
           title: "Housekeeping Expenses Provision",
           files: {
-            extract: { title: "Oracle ERP extract", desc: "IIVF Account Analysis report · accounts 51610, 51612, 51613, 51614 · one full month, raw download" },
+            extract: { title: "Oracle ERP extract", desc: "IIVF Account Analysis report, original download for one full month · accounts 51610, 51612–51614, or the combined 51610–51614 report (51611 is skipped)" },
             opening: { title: "Last month's statement", desc: "Previous month's Housekeeping Exp provision statement · gives the opening balances" },
             rajeev: { title: "Provision file", desc: `This month's file from Rajeev · sheet "HK <month>" · Manpower column only` }
           },

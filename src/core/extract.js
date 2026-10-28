@@ -6,9 +6,15 @@
 //   accountsText: '51610, 51612, 51613 and 51614',
 //   glParams: { from, to } | null,            expected "GL Code From/To" report parameters; null = not checked
 //   multipleAccountsAllowed: false,           may the "Multiple Accounts" report parameter be filled in?
+//   familyAccounts: [51610, …, 51614],         optional: a combined report may also hold these accounts; their lines are
+//                                               skipped (returned in `skipped`, listed on Points to check), any other stops
+//   familyText: '51610–51614',
+//   fullMonthDownload: true,                   optional: the report parameter block must be there, From = 1st, To = month end
+//   accountsInParams: true,                    optional: when the report shows GL Code From/To or Multiple Accounts, they
+//                                               must include every account of this working
 // }
 'use strict';
-const { InputError, norm, parseMonthYear, parseDateText, fyOf, monthLabel, hasMoreThan2Decimals } = require('./common');
+const { InputError, norm, parseMonthYear, parseDateText, fyOf, monthLabel, hasMoreThan2Decimals, fmtINR } = require('./common');
 const { infoText, infoNumber, infoInteger, sheetRows } = require('./excel');
 
 const EXTRACT_REQUIRED = {
@@ -76,18 +82,27 @@ function readExtract(wb, spec) {
   if (rows.length === 0) errors.push('ERP extract: there are no data rows under the headings.');
   if (errors.length) throw new InputError(errors.slice(0, 50).concat(errors.length > 50 ? [`… and ${errors.length - 50} more problems.`] : []));
 
-  // One accounting period only (SOP Step 3: first to last day of one month)
+  // One accounting period only (SOP Step 3: first to last day of one month); checked on every line, skipped ones too
   const periods = [...new Set(rows.map((x) => x.period))];
   if (periods.length !== 1) throw new InputError([`ERP extract: it contains more than one period (${periods.join(', ')}). Download one month only (SOP Step 3).`]);
   const pm = parseMonthYear(periods[0]);
   if (!pm) throw new InputError([`ERP extract: PERIOD_NAME "${periods[0]}" is not a month (expected e.g. "Sep-26").`]);
 
-  // Only the SOP's accounts (Step 2)
-  const badAcc = [...new Set(rows.filter((x) => !spec.accounts.includes(x.seg2)).map((x) => x.seg2))].sort((a, b) => a - b);
-  if (badAcc.length) throw new InputError([`ERP extract: it contains account(s) ${badAcc.join(', ')}. This working uses only ${spec.accountsText} (SOP Step 2). Re-run the report with the correct accounts.`]);
+  // Only the SOP's accounts (Step 2). With familyAccounts, the other accounts of a combined report are skipped.
+  const family = spec.familyAccounts || [];
+  const badAcc = [...new Set(rows.filter((x) => !spec.accounts.includes(x.seg2) && !family.includes(x.seg2)).map((x) => x.seg2))].sort((a, b) => a - b);
+  if (badAcc.length) throw new InputError([`ERP extract: it contains account(s) ${badAcc.join(', ')}. This working uses only ${spec.accountsText} (SOP Step 2)` +
+    (family.length ? `; a combined report for accounts ${spec.familyText} is also accepted` : '') + '. Re-run the report with the correct accounts.']);
+  const skipped = rows.filter((x) => !spec.accounts.includes(x.seg2));
+  const own = rows.filter((x) => spec.accounts.includes(x.seg2));
 
   const period = { label: periods[0].trim(), display: monthLabel(pm.y, pm.m), y: pm.y, m: pm.m, cur: fyOf(pm.y, pm.m), prev: (fyOf(pm.y, pm.m) + 99) % 100 };
 
+  // The original download for the full month (fullMonthDownload): the parameter block must be there
+  const NOT_ORIGINAL = 'This doesn\'t look like the original ERP download for the full month.';
+  if (spec.fullMonthDownload && (!params.found || !params.from || !params.to)) {
+    throw new InputError([`ERP extract: ${NOT_ORIGINAL} The report title and parameters (From Date, To Date) are missing at the top of the file. Upload the "IIVF Account Analysis" file exactly as the ERP gives it (SOP Steps 2–4).`]);
+  }
   // Parameter block consistency, when present
   const paramErrors = params.problems.slice();
   if (params.from && (params.from.y !== pm.y || params.from.m !== pm.m || params.from.d !== 1)) paramErrors.push(`report "From Date" ${params.fromText} is not the first day of ${period.label}`);
@@ -99,16 +114,28 @@ function readExtract(wb, spec) {
     if (params.glFrom !== null && params.glFrom !== spec.glParams.from) paramErrors.push(`report "GL Code From" is ${params.glFrom}, SOP says ${spec.glParams.from}`);
     if (params.glTo !== null && params.glTo !== spec.glParams.to) paramErrors.push(`report "GL Code To" is ${params.glTo}, SOP says ${spec.glParams.to}`);
   }
-  if (paramErrors.length) throw new InputError(paramErrors.map((e) => `ERP extract: ${e} (SOP Steps 2–3).`));
+  if (spec.accountsInParams) {
+    const listed = (params.multipleAccounts.match(/\d{5}/g) || []).map(Number);
+    const ranged = params.glFrom !== null && params.glTo !== null;
+    if (ranged || listed.length) {
+      const missing = spec.accounts.filter((a) => !(ranged && a >= params.glFrom && a <= params.glTo) && !listed.includes(a));
+      if (missing.length) paramErrors.push(`the report parameters (GL Code From/To ${params.glFrom ?? '-'}–${params.glTo ?? '-'}${listed.length ? ', Multiple Accounts ' + params.multipleAccounts : ''}) do not include account(s) ${missing.join(', ')}, so their lines would be missing`);
+    }
+  }
+  if (paramErrors.length) {
+    const fullMonth = spec.fullMonthDownload && paramErrors.some((e) => /From Date|To Date/.test(e));
+    throw new InputError(paramErrors.map((e) => `ERP extract: ${fullMonth && /From Date|To Date/.test(e) ? NOT_ORIGINAL + ' ' : ''}${e} (SOP Steps 2–3).`));
+  }
 
-  return { sheetName: g.name, headerRow: hdr, headers, col, rows, period, params, rawSheet };
+  return { sheetName: g.name, headerRow: hdr, headers, col, rows: own, skipped, period, params, rawSheet };
 }
 
 function readExtractParams(g, hdr, spec) {
-  const out = { from: null, to: null, fromText: '', toText: '', glFrom: null, glTo: null, multipleAccounts: '', problems: [] };
+  const out = { found: false, from: null, to: null, fromText: '', toText: '', glFrom: null, glTo: null, multipleAccounts: '', problems: [] };
   for (let r = 1; r < hdr && r < g.rowCount; r++) {
     const names = []; for (let c = 1; c <= g.colCount; c++) names[c] = norm(infoText(g.rows[r][c]));
     if (names.indexOf('fromdate') < 1) continue;
+    out.found = true;
     const vals = g.rows[r + 1];
     const pick = (key) => { const i = names.indexOf(key); return i > 0 ? vals[i] : null; };
     const asDate = (info, label) => {
@@ -142,4 +169,13 @@ function readExtractParams(g, hdr, spec) {
   return out;
 }
 
-module.exports = { readExtract, EXTRACT_REQUIRED };
+/** Lines of a combined report that belong to another working: per account, count and total; and one "Points to check" text. */
+function skippedSummary(extract, accountsText) {
+  const by = new Map(); for (const r of extract.skipped || []) { const o = by.get(r.seg2) || { account: r.seg2, n: 0, totalP: 0 }; o.n++; o.totalP += Math.round(r.bal * 100); by.set(r.seg2, o); }
+  const list = [...by.values()].sort((a, b) => a.account - b.account);
+  const totalP = list.reduce((a, o) => a + o.totalP, 0);
+  const text = list.length ? `The ERP download is a combined report. ${list.map((o) => `${o.n} line(s) of account ${o.account} (total ${fmtINR(o.totalP / 100)})`).join(', ')} belong to the other Housekeeping working and were skipped; this working uses only ${accountsText}. They stay in the Raw sheet.` : '';
+  return { list, totalP, text };
+}
+
+module.exports = { readExtract, skippedSummary, EXTRACT_REQUIRED };

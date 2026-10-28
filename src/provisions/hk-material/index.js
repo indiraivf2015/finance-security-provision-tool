@@ -20,7 +20,8 @@ const { ExcelJS, formatTable, FMT_AMT, HEAD_FILL, BOX } = require('../../core/ex
 const { applyNegativeCarryForward, checkList } = require('../../core/rules');
 const { isWrongKind, GST_RECLASS_CREATOR } = require('../../core/clean');
 const { writeRaw, writeWorking, writePoints } = require('../../core/sheets');
-const { mergedPointText } = require('../../core/opening');
+const { skippedSummary } = require('../../core/extract');
+const { manualRowText } = require('../../core/opening');
 
 const VERSION = '1.0.0';
 const TOOL = 'Housekeeping Material Provision Tool';
@@ -73,6 +74,9 @@ function compute(state, rule) {
   });
   const adjInfo = rule ? applyNegativeCarryForward(stmt, NEG_COL, rule.topN) : null;
   for (const s of stmt) { s.cf = s.cfSop + s.adj; s.ytd = s.cf + s.prov; }
+  // Manual fixed rows (opening.manualRows; owner's decision 28-Oct-2026, as Housekeeping Expenses): after the centres, carried
+  // forward unchanged: no booking, no provision, not part of the negative carry-forward rule; YTD = opening.
+  for (const m of opening.manualRows || []) stmt.push({ code: m.code, name: m.name, manual: true, manualRow: m.row, open: m.v.ytd, booking: 0, cfSop: m.v.ytd, adj: 0, cf: m.v.ytd, prov: 0, ytd: m.v.ytd, isNew: false });
 
   const sum = (f) => stmt.reduce((a, s) => a + s[f], 0);
   const T = { open: sum('open'), booking: sum('booking'), cf: sum('cf'), prov: sum('prov'), ytd: sum('ytd'), adj: sum('adj') };
@@ -80,8 +84,9 @@ function compute(state, rule) {
   const curTotalP = cur.reduce((a, r) => a + toPaise(r.bal), 0);
   const removedTotalP = removed.reduce((a, r) => a + toPaise(r.bal), 0);
   const extractTotalP = extract.rows.reduce((a, r) => a + toPaise(r.bal), 0);
+  const skip = skippedSummary(extract, 'account 51611');
   let pivotCurP = 0; for (const p of pivot.values()) pivotCurP += p.amt;
-  let openYtd = 0; for (const o of opening.centres.values()) openYtd += o.v.ytd;
+  let openYtd = 0; for (const o of [...opening.centres.values(), ...(opening.manualRows || [])]) openYtd += o.v.ytd;
 
   // Section 04 checks + completeness
   const { checks, add, status } = checkList();
@@ -94,7 +99,8 @@ function compute(state, rule) {
   add('04 · check 4', `${H.prov} column total = Materials column total in Rajeev's file`, rajeev.columnTotal, T.prov);
   add('04 · check 5', `Totals row: ${H.open} − ${H.booking} = Prov CF`, T.open - T.booking, rule ? T.cf - T.adj : T.cf);
   add('04 · check 5', `Totals row: Prov CF + ${H.prov} = YTD`, T.cf + T.prov, T.ytd);
-  add('Completeness', 'ERP extract total = Working total + Removed lines total (no line lost)', extractTotalP / 100, (keptTotalP + removedTotalP) / 100);
+  if (skip.list.length) add('Completeness', 'ERP extract total = Working total + Removed lines total + other Housekeeping account lines skipped (no line lost)', (extractTotalP + skip.totalP) / 100, (keptTotalP + removedTotalP + skip.totalP) / 100);
+  else add('Completeness', 'ERP extract total = Working total + Removed lines total (no line lost)', extractTotalP / 100, (keptTotalP + removedTotalP) / 100);
   add('Completeness · Step 12', `Opening ${H.open} = last month's YTD total`, openYtd, T.open);
   if (adjInfo) {
     add('Negative CF rule', 'Prov CF adjustments net to zero (column total unchanged)', 0, T.adj);
@@ -106,15 +112,16 @@ function compute(state, rule) {
   const pt = (code, name, point, amount, check) => points.push({ code, name, point, amount: amount == null ? null : Math.round(amount * 100) / 100, check });
   for (const r of earlier) pt(r.seg1, r.ccName, `${fyLabelWorking(r.fy)} line left out of the statement (only ${fyLabelWorking(period.cur)} bookings are used, SOP Step 10). ERP row ${r.erpRow}: "${r.desc.slice(0, 120)}"`, r.bal, 'For information. Confirm this line belongs to last year.');
   for (const s of stmt) {
+    if (s.manual) { pt(s.code, s.name, manualRowText(opening.manualRows.find((m) => m.row === s.manualRow), opening.columns), s.ytd, 'For information. Finance adds this row by hand; it stays until finance removes it from the statement.'); continue; }
     if (!provByCode.has(s.code)) pt(s.code, s.name, `Not in Rajeev's provision file, so "${H.prov}" is 0.` + (Math.abs(s.booking) > EPS ? ` ${fmtINR(s.booking)} was booked for this centre this month.` : ''), Math.abs(s.booking) > EPS ? s.booking : null, 'Check with Rajeev whether this centre should have a material provision this month.');
     if (s.isNew) pt(s.code, s.name, `New centre: not in last month's statement, so its ${H.open} is 0.`, null, 'Confirm this centre is new and has no balance carried from last month.');
   }
   for (const [code, n] of provCount) if (n > 1) pt(code, (stmt.find((s) => s.code === code) || {}).name || '', `Listed ${n} times in Rajeev's provision file; the rows are added together (one statement row per centre).`, provByCode.get(code), 'For information.');
   for (const b of rajeev.blanks) pt(b.code, (stmt.find((s) => s.code === b.code) || {}).name || '', `Rajeev's provision file row ${b.row}: "Materials" is blank, taken as 0.`, null, 'Check whether an amount is missing in Rajeev\'s file.');
-  for (const o of opening.merged || []) pt(o.code, o.name, mergedPointText(o, opening.columns), o.v.ytd, 'Confirm with finance that these rows belong to the same centre and should be carried forward together.');
+  if (skip.text) pt(null, '', skip.text, skip.totalP / 100, 'For information. Upload the same file to the other Housekeeping tool.');
   for (const o of opening.centres.values()) if (o.blank.ytd) pt(o.code, o.name, `Last month's statement row ${o.row}: YTD is blank, taken as 0.`, null, 'Check whether last month\'s balance is missing.');
   for (const s of stmt) {
-    if (s.cfSop >= -EPS) continue;
+    if (s.manual || s.cfSop >= -EPS) continue;
     if (!adjInfo) pt(s.code, s.name, `Prov CF is negative (${fmtINR(s.cfSop)}): more booked than provided. Carried with its minus sign (SOP Step 14).`, s.cfSop, 'Review this centre\'s bookings and provision.');
     else if (adjInfo.adj.applied) pt(s.code, s.name, `Prov CF was ${fmtINR(s.cfSop)} (more booked than provided). Set to 0 under the negative carry-forward rule; the amount was taken from the ${adjInfo.adj.recipients.length} centres with the highest Prov CF (see the adjustment table in the "Points to check" sheet).`, s.cfSop, 'Review this centre\'s bookings and provision.');
     else pt(s.code, s.name, `Prov CF is negative (${fmtINR(s.cfSop)}) and could NOT be absorbed: the negative total ${fmtINR(adjInfo.adj.total)} is more than the top ${rule.topN} centres can take.`, s.cfSop, 'The negative carry-forward rule could not be applied this month. Review with finance.');
@@ -177,6 +184,8 @@ async function buildWorkbook(state, R, meta, rule) {
   const first = 5, last = 4 + R.stmt.length;
   R.stmt.forEach((s, i) => {
     const rn = first + i;
+    // manual fixed row: plain values, so the centre's booking and provision stay on its normal row
+    if (s.manual) { wsSum.getRow(rn).values = [null, s.code, s.name, s.open, 0, { formula: `D${rn}-E${rn}`, result: s.cf }, 0, { formula: `F${rn}+G${rn}`, result: s.ytd }]; return; }
     wsSum.getRow(rn).values = [null, s.code, s.name, s.open,
       { formula: `SUMIFS(Pivot!$C$4:$C$${pEnd},Pivot!$A$4:$A$${pEnd},$B${rn})`, result: s.booking },
       Math.abs(s.adj) > 0 ? s.cf : { formula: `D${rn}-E${rn}`, result: s.cf },
@@ -201,8 +210,10 @@ function make(negativeCfRule) {
   const rule = negativeCfRule === undefined ? NEGATIVE_CF_RULE : negativeCfRule;
   return createEngine({
     toolName: TOOL, version: VERSION, sopVersion: 'SOP v1.0 · October 2026',
-    extract: { accounts: [51611], accountsText: 'account 51611', glParams: { from: 51611, to: 51611 }, multipleAccountsAllowed: false },
-    opening: () => ({ columns: [{ key: 'ytd', header: 'YTD', choosable: true }], aprilNote: false, mergeDuplicates: true }),
+    extract: { accounts: [51611], accountsText: 'account 51611', glParams: null, multipleAccountsAllowed: true,
+    familyAccounts: [51610, 51611, 51612, 51613, 51614], familyText: '51610–51614', // combined report (finance's practice, approved Oct 2026)
+    fullMonthDownload: true, accountsInParams: true, },
+    opening: () => ({ columns: [{ key: 'ytd', header: 'YTD', choosable: true }], aprilNote: false, manualRows: true }),
     provisionFile: { sheet: { test: /^\s*hk(?![a-z])/i, text: '"HK <Mon-YY>"' },amount: { startsWith: 'materials', text: 'Materials' }, noun: 'housekeeping' },
     stopInApril: true,
     compute: (state) => compute(state, rule),
@@ -211,7 +222,7 @@ function make(negativeCfRule) {
       title: 'Housekeeping Material Provision',
       decimals: 0, // shown without paise, as in the SOP (exact values are kept)
       files: {
-        extract: { title: 'Oracle ERP extract', desc: 'IIVF Account Analysis report · account 51611 only · one full month, raw download' },
+        extract: { title: 'Oracle ERP extract', desc: 'IIVF Account Analysis report, original download for one full month · account 51611, or the combined 51610–51614 report (only 51611 is used)' },
         opening: { title: 'Last month\'s statement', desc: 'Previous month\'s Material Provision statement · its YTD column is the opening' },
         rajeev: { title: 'Provision file', desc: 'This month\'s file from Rajeev · sheet "HK <month>" · Materials column, as it is' },
       },

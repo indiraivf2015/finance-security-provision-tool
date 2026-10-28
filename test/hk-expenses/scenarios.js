@@ -38,7 +38,7 @@ const HK_ROWS = (opts) => CODES.map((c) => ({ code: c, name: NAME(c), manpower: 
 async function files(o) {
   o = o || {};
   return {
-    extract: await F.extract({ period: o.period || 'Sep-26', from: o.from || '2026-09-01', to: o.to || '2026-09-30', glFrom: '51610', glTo: '51614', lines: o.lines || BASE_LINES }),
+    extract: await F.extract({ period: o.period || 'Sep-26', from: o.from || '2026-09-01', to: o.to || '2026-09-30', glFrom: o.glFrom || '51610', glTo: o.glTo || '51614', multiple: o.multiple, noParams: o.noParams, lines: o.lines || BASE_LINES }),
     opening: o.openingBuf || await F.statement({ title: o.openTitle || 'Housekeeping Exp – Provision for the month of Aug-26', headers: o.openHdr || OPEN_HDR, rows: o.openRows || openRows(CODES) }),
     rajeev: o.rajeevBuf || await F.hkFile({ sheet: o.sheet || 'HK Sep-26', rows: o.hkRows || HK_ROWS(), extraSheets: o.extraSheets || ['Security Sep-26'] }),
   };
@@ -63,7 +63,14 @@ test('base month: READY, all checks pass, 17 checks (SOP 04 checks 1-6, complete
   const fails = R.checks.filter((c) => c.status === 'FAIL').map((c) => c.text);
   return fails.length === 0 && R.checks.length === 17 && R.status !== 'NOT READY' ? true : `status ${R.status}, ${R.checks.length} checks, failed: ${fails.join('; ')}`;
 });
-test('Step 2: a 51611 (Material) line stops the tool and names the account', () => expectError({ lines: BASE_LINES.concat([L(9001, 10, 'x for the month of August 2026', { account: 51611 })]) }, /51611.*51610, 51612, 51613 and 51614/));
+test('Combined report: 51611 (Material) lines are skipped, listed with count and total, figures unchanged', async () => {
+  const a = await run(); const b = await run({ lines: BASE_LINES.concat([L(9001, 10, 'x for the month of August 2026', { account: 51611 }), L(9002, 25.5, 'y for the month of August 2026', { account: 51611 })]) });
+  const p = b.R.points.find((x) => x.point.includes('combined report. 2 line(s) of account 51611 (total ₹35.50)'));
+  const c = b.R.checks.find((x) => /other Housekeeping account lines skipped/.test(x.text));
+  return p && c && c.status === 'PASS' && near(a.R.T.ytd, b.R.T.ytd) && b.st.kept.length === a.st.kept.length ? true : `point ${!!p}, check ${c && c.status}, ytd ${a.R.T.ytd}/${b.R.T.ytd}`;
+});
+test('Step 2: report parameters that leave out one of the four accounts stop the tool', () => expectError({ glFrom: '51610', glTo: '51612' }, /do not include account\(s\) 51613, 51614/));
+test('Step 4: an edited file without the report title and parameters stops the tool', () => expectError({ noParams: true }, /doesn't look like the original ERP download for the full month/));
 test('Step 2: a Security account (51701) line stops the tool', () => expectError({ lines: BASE_LINES.concat([L(9001, 10, 'x', { account: 51701 })]) }, /51701/));
 test('Steps 7-8: IIVF P2P and Payables kept, GST reclass kept, other Spreadsheet and other sources removed', async () => {
   const { st } = await run();
@@ -167,16 +174,37 @@ test('Opening: two "YTD FY27" columns → the user picks one', async () => {
   const r2 = await run({ openHdr: hdr, openRows: rows }, { openingYtdCol: r.needChoice.options[1].col });
   return near(r2.R.T.proCur, CODES.length) ? true : 'choice not used: ' + r2.R.T.proCur;
 });
-test('Opening: a centre on two rows of last month\'s statement is added together, listed, totals unchanged', async () => {
-  const rows = openRows(CODES).concat([[9003, NAME(9003), 0, 0, 0, 0, 0, 0, 0, 5000000]]);
-  const a = await run(); const b = await run({ openRows: rows });
-  const s = b.R.stmt.find((x) => x.code === 9003);
-  const p = b.R.points.find((x) => x.code === 9003 && x.point.startsWith('Centre 9003 appears 2 times in last month\'s statement (₹3,00,000.00 + ₹50,00,000.00); rows added together.'));
-  const totalsOk = near(b.R.T.proCur, a.R.T.proCur + 5000000) && near(b.R.T.proPrev, a.R.T.proPrev) && b.R.stmt.filter((x) => x.code === 9003).length === 1;
-  return s && near(s.proCur, 5300000) && near(s.proPrev, 5000) && p && totalsOk ? true : `9003 ${s && s.proCur}/${s && s.proPrev}, point ${!!p}, totals ${totalsOk}`;
+// Finance's hand-added row (Mumbai_Corporate Rs 50,00,000): a second row for a centre in last month's statement
+const MANUAL_ROWS = openRows(CODES).concat([[9003, NAME(9003), 5000000, 0, 0, 0, 5000000, 0, 0, 5000000]]);
+test('Manual row: a centre\'s second row is carried forward unchanged as its own row; the normal row works as usual', async () => {
+  const a = await run(); const b = await run({ openRows: MANUAL_ROWS });
+  const rows = b.R.stmt.filter((x) => x.code === 9003); const [n, m] = rows; const n0 = a.R.stmt.find((x) => x.code === 9003);
+  const sameNormal = ['proCur', 'proPrev', 'bkCur', 'bkPrev', 'cfCur', 'cfPrev', 'raj', 'ytd'].every((f) => near(n[f], n0[f]));
+  const manualOk = m && m.manual && near(m.proCur, 5000000) && near(m.bkCur + m.bkPrev + m.raj + m.adjCur + m.adjPrev, 0) && near(m.ytd, 5000000);
+  const totalsOk = near(b.R.T.proCur, a.R.T.proCur + 5000000) && near(b.R.T.ytd, a.R.T.ytd + 5000000) && near(b.R.T.bkCur, a.R.T.bkCur) && near(b.R.T.raj, a.R.T.raj);
+  const p = b.R.points.find((x) => x.code === 9003 && x.point.startsWith('Centre 9003 has a manually added row (₹50,00,000.00) carried forward unchanged, as in last month\'s statement'));
+  const ws = await sheetOf(b.buffer, 'Summary'); const sumRows = []; ws.eachRow((r, i) => { if (i > 4 && r.getCell('B').value === 9003) sumRows.push(r); });
+  const sheetOk = sumRows.length === 2 && sumRows[1].getCell('F').value === 0 && sumRows[1].getCell('J').value === 0 && cached(sumRows[1].getCell('K')) === 5000000 && sumRows[1].number > sumRows[0].number;
+  const checksOk = b.R.checks.every((c) => c.status !== 'FAIL');
+  return rows.length === 2 && sameNormal && manualOk && totalsOk && p && sheetOk && checksOk ? true : `rows ${rows.length}, normal ${sameNormal}, manual ${manualOk}, totals ${totalsOk}, point ${!!p}, sheet ${sheetOk}, checks ${checksOk}`;
+});
+test('Manual row: bookings larger than the normal provision — negative rule on the normal row only, manual row unchanged and not a top-10 centre', async () => {
+  const b = await run({ openRows: MANUAL_ROWS, lines: BASE_LINES.concat([L(9003, 400000, 'Housekeeping for the month of August 2026', {})]) });
+  const [n, m] = b.R.stmt.filter((x) => x.code === 9003);
+  const ok = near(n.cfCurSop, 300000 - 400000) && near(n.cfCur, 0) && near(n.adjCur, 100000) && near(m.adjCur, 0) && near(m.cfCur, 5000000) && near(m.ytd, 5000000) && near(b.R.T.adjCur, 0);
+  const donors = b.R.stmt.filter((x) => x.adjCur < 0); const manualNotDonor = !donors.some((x) => x.manual);
+  return ok && manualNotDonor && b.R.adjInfo.adjCur.applied ? true : `normal ${n.cfCurSop}/${n.cfCur}/${n.adjCur}, manual ${m.adjCur}/${m.ytd}, donors ${donors.map((x) => x.code + (x.manual ? 'M' : ''))}`;
+});
+test('Manual row: next month the tool\'s own download is read with both rows, the manual row still unchanged', async () => {
+  const sep = await run({ openRows: MANUAL_ROWS });
+  const oct = E.analyse(await E.load({ extract: await F.extract({ period: 'Oct-26', from: '2026-10-01', to: '2026-10-31', glFrom: '51610', glTo: '51614', lines: [L(9001, 10, 'for the month of September 2026')] }), opening: sep.buffer, rajeev: await F.hkFile({ sheet: 'HK Oct-26', rows: HK_ROWS() }) }), {});
+  if (oct.needChoice) return 'needs choice ' + oct.needChoice.kind;
+  const { result: R } = await E.build(oct, new Map(), { now: new Date(0) });
+  const [n, m] = R.stmt.filter((x) => x.code === 9003); const sepN = sep.R.stmt.find((x) => x.code === 9003 && !x.manual);
+  return oct.opening.manualRows.length === 1 && m && m.manual && near(m.proCur, 5000000) && near(m.ytd, 5000000) && near(n.proCur, sepN.ytd) ? true : `manual rows ${oct.opening.manualRows.length}, normal opening ${n && n.proCur} vs Sep YTD ${sepN.ytd}`;
 });
 test('April: stops, the SOP has no year-end roll-over rule', () => expectError({ period: 'Apr-27', from: '2027-04-01', to: '2027-04-30', sheet: 'HK Apr-27', openTitle: 'Housekeeping Exp – Provision for the month of Mar-27', lines: [L(9001, 10, 'for the month of April 2027')] }, /April/));
-test('Report dates: a To Date that is not the month end stops the tool', () => expectError({ to: '2026-09-29' }, /To Date/));
+test('Report dates: a To Date that is not the month end stops the tool', () => expectError({ to: '2026-09-29' }, /doesn't look like the original ERP download for the full month. report "To Date"/));
 
 (async () => {
   let bad = 0;

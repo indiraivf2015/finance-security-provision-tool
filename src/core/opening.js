@@ -5,10 +5,12 @@
 //   columns: [ { key: 'ytd', header: 'YTD FY27', choosable: true },     header matched exactly (after normalising);
 //              { key: 'cf',  header: 'FY26 Pro CF' } ],                 choosable = if it appears twice, the user picks one
 //   aprilNote: true,                                                     in April, explain the SOP has no year-end rule
-//   mergeDuplicates: true,                                               a centre on several rows: add the rows together
-//                                                                        (listed in `merged`); otherwise stop with an error
+//   manualRows: true,                                                    a centre on several rows: the first is the normal row,
+//                                                                        each extra row a manual fixed row (in `manualRows`);
+//                                                                        otherwise stop with an error
 // }
-// Returns { centres: Map(code -> { code, name, row, v: {key: amount}, blank: {key: bool} }), order, … } or { needChoice }.
+// Returns { centres: Map(code -> { code, name, row, v: {key: amount}, blank: {key: bool} }), order, manualRows: [{ code, name,
+//           row, v }], … } or { needChoice }.
 'use strict';
 const { InputError, norm, parseMonthYear, prevMonth, monthLabel, colLetter, MONTH_ABBR, pad2, fmtINR } = require('./common');
 const { infoText, infoNumber, infoInteger, sheetRows } = require('./excel');
@@ -79,7 +81,7 @@ function readOpening(wb, period, opts, spec) {
     }
   }
 
-  const centres = new Map(); const order = [];
+  const centres = new Map(); const order = []; const manualRows = [];
   for (let r = s.hdr + 1; r <= s.g.rowCount; r++) {
     const row = s.g.rows[r];
     const code = infoInteger(row[s.cc]);
@@ -94,32 +96,29 @@ function readOpening(wb, period, opts, spec) {
     for (const col of cols) { v[col.key] = nums[col.key].ok ? (nums[col.key].v || 0) : 0; blank[col.key] = nums[col.key].ok && nums[col.key].v === null; }
     if (centres.has(code.v)) {
       const first = centres.get(code.v);
-      // spec.mergeDuplicates (Housekeeping, owner's decision Oct 2026): the rows are added together and listed on "Points to check"
-      if (spec.mergeDuplicates) {
-        for (const col of cols) { first.v[col.key] += v[col.key]; first.blank[col.key] = first.blank[col.key] && blank[col.key]; }
-        first.parts.push({ row: r, v }); continue;
-      }
+      // spec.manualRows (Housekeeping Expenses, finance's decision 28-Oct-2026): an extra row is a hand-added provision,
+      // carried forward unchanged as its own row
+      if (spec.manualRows) { manualRows.push({ code: code.v, name: s.nameCol > 0 ? infoText(row[s.nameCol]) : first.name, row: r, v }); continue; }
       // Otherwise never added together automatically: a second row can be a hand-typed provision whose treatment finance must decide.
       const nm = first.name ? ` (${first.name})` : '';
       errs.push(`Last month's statement: cost centre ${code.v}${nm} appears more than once (rows ${first.row} and ${r}). The statement must have one row per cost centre, and the tool does not add rows together by itself. Ask finance how this centre's opening should be carried forward, correct last month's statement, and upload it again.`);
       continue;
     }
-    centres.set(code.v, { code: code.v, name: s.nameCol > 0 ? infoText(row[s.nameCol]) : '', row: r, v: { ...v }, blank, parts: [{ row: r, v }] });
+    centres.set(code.v, { code: code.v, name: s.nameCol > 0 ? infoText(row[s.nameCol]) : '', row: r, v, blank });
     order.push(code.v);
   }
   if (errs.length) throw new InputError(errs.slice(0, 50));
   if (!centres.size) throw new InputError(['Last month\'s statement: no cost-centre rows found under the headings.']);
   const colLetters = {}; for (const col of cols) colLetters[col.key] = colLetter(use[col.key]);
-  const merged = [...centres.values()].filter((o) => o.parts.length > 1);
-  return { sheet: s.g.name, headerRow: s.hdr, colLetters, title: stmtTitle, monthConfirmedByUser: !stmtMonth, centres, order, columns: cols, merged, label: monthLabel(pm.y, pm.m) };
+  return { sheet: s.g.name, headerRow: s.hdr, colLetters, title: stmtTitle, monthConfirmedByUser: !stmtMonth, centres, order, manualRows, columns: cols, label: monthLabel(pm.y, pm.m) };
 }
 
-/** "Points to check" text for a centre whose rows were added together (spec.mergeDuplicates). The first column is the opening shown first. */
-function mergedPointText(o, columns) {
-  const [c0, ...rest] = columns; const nm = o.name || ('Cost centre ' + o.code);
-  const fig = (c) => o.parts.map((p) => fmtINR(p.v[c.key])).join(' + ');
-  return `${nm} appears ${o.parts.length} times in last month's statement (${fig(c0)}); rows added together. Rows ${o.parts.map((p) => p.row).join(', ')}: ${c0.header} ${fig(c0)} = ${fmtINR(o.v[c0.key])}` +
-    rest.map((c) => `; ${c.header} ${fig(c)} = ${fmtINR(o.v[c.key])}`).join('') + '.';
+/** "Points to check" text for a manual fixed row (spec.manualRows). */
+function manualRowText(m, columns) {
+  const nm = m.name || ('Cost centre ' + m.code);
+  const figs = columns.filter((c, i) => i === 0 || Math.abs(m.v[c.key]) > 0.005);
+  const fig = figs.length === 1 ? fmtINR(m.v[figs[0].key]) : figs.map((c) => `${c.header} ${fmtINR(m.v[c.key])}`).join('; ');
+  return `${nm} has a manually added row (${fig}) carried forward unchanged, as in last month's statement (row ${m.row}). No bookings, no Rajeev provision and no negative carry-forward adjustment on this row; the centre's normal row works as usual.`;
 }
 
-module.exports = { readOpening, mergedPointText };
+module.exports = { readOpening, manualRowText };

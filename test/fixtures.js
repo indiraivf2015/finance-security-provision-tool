@@ -9,15 +9,17 @@ const ExcelJS = require('exceljs');
 const EXTRACT_COLS = ['PERIOD_NAME', 'BALANCING_SEGMENT_DESC', 'NATURAL_ACCOUNT_DESC', 'SEGMENT1', 'SEGMENT2', 'SEGMENT3', 'SEGMENT4', 'SEGMENT5', 'SEGMENT6', 'SEGMENT7', 'SEGMENT8', 'SEGMENT9', 'GL_DATE', 'LINE_DESCRIPTION', 'ACCOUNTED_DR', 'ACCOUNTED_CR', 'BALANCE', 'JE_SOURCE_NAME', 'GL_BATCH_NAME', 'ACCOUNTING_CLASS_CODE', 'ACCOUNTING_CLASS_NAME', 'ATTRIBUTE1', 'ATTRIBUTE2', 'ATTRIBUTE3', 'ATTRIBUTE4', 'ATTRIBUTE5', 'TRANSACTION_NUMBER', 'TRANSACTION_DATE', 'PARTY_NUMBER', 'PARTY_NAME', 'PARTY_SITE_NAME', 'GL_JE_NAME', 'POSTED_DATE', 'HEADER_DESCRIPTION', 'LAST_UPDATE_DATE', 'CREATION_DATE', 'CREATED_BY'];
 
 /**
- * p = { period: 'Sep-26', from: '2026-09-01', to: '2026-09-30', glFrom: '51610', glTo: '51614', multiple: '',
+ * p = { period: 'Sep-26', from: '2026-09-01', to: '2026-09-30', glFrom: '51610', glTo: '51614', multiple: '', noParams: false (edited file: no title/parameters),
  *       lines: [{ code, name, account, bal, desc, source = 'IIVF P2P', by = 'ERP.Integrator', attr3 = 'Vendor', party = '' }] }
  */
 async function extract(p) {
   const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('Sheet1');
-  ws.getRow(1).values = ['IIVF Account Analysis Report'];
-  ws.getRow(3).values = ['Parameter'];
-  ws.getRow(4).values = ['From Date', 'To Date', 'GL Code From', 'GL Code To', 'Center From', 'Center To', 'Multiple Accounts'];
-  ws.getRow(5).values = [p.from + 'T00:00:00.000+00:00', p.to + 'T00:00:00.000+00:00', p.glFrom || null, p.glTo || null, null, null, p.multiple || null];
+  if (!p.noParams) {
+    ws.getRow(1).values = ['IIVF Account Analysis Report'];
+    ws.getRow(3).values = ['Parameter'];
+    ws.getRow(4).values = ['From Date', 'To Date', 'GL Code From', 'GL Code To', 'Center From', 'Center To', 'Multiple Accounts'];
+    ws.getRow(5).values = [p.from + 'T00:00:00.000+00:00', p.to + 'T00:00:00.000+00:00', p.glFrom || null, p.glTo || null, null, null, p.multiple || null];
+  }
   ws.getRow(9).values = EXTRACT_COLS;
   p.lines.forEach((l, i) => {
     const v = {

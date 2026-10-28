@@ -18,7 +18,8 @@ const { ExcelJS, formatTable, FMT_AMT2, HEAD_FILL, THIN, BOX } = require('./exce
 const { applyNegativeCarryForward, checkList } = require('./rules');
 const { isWrongKind, GST_RECLASS_CREATOR } = require('./clean');
 const { writeRaw, writeWorking, writePoints } = require('./sheets');
-const { mergedPointText } = require('./opening');
+const { skippedSummary } = require('./extract');
+const { manualRowText } = require('./opening');
 
 const NEG_COLUMNS = (period) => [
   { sopF: 'cfCurSop', adjF: 'adjCur', finF: 'cfCur', label: `${fyLabelHeader(period.cur)} Pro CF` },
@@ -66,6 +67,12 @@ function compute(state, cfg) {
 
   const adjInfo = cfg.negativeCarryForward ? applyNegativeCarryForward(stmt, NEG_COLUMNS(period), cfg.negativeCarryForward.topN) : null;
   for (const s of stmt) { s.cfCur = s.cfCurSop + s.adjCur; s.cfPrev = s.cfPrevSop + s.adjPrev; s.ytd = s.cfCur + s.raj; }
+  // Manual fixed rows (opening.manualRows): after the centres, in last month's order. Carried forward unchanged: no bookings,
+  // no Rajeev provision, not part of the negative carry-forward rule; YTD = opening.
+  for (const m of opening.manualRows || []) {
+    const proCur = m.v.ytd, proPrev = m.v.cf;
+    stmt.push({ code: m.code, name: m.name, manual: true, manualRow: m.row, proCur, proPrev, bkCur: 0, bkPrev: 0, cfCurSop: proCur, cfPrevSop: proPrev, adjCur: 0, adjPrev: 0, cfCur: proCur, cfPrev: proPrev, raj: 0, ytd: proCur, isNew: false });
+  }
 
   // Totals
   const sum = (f) => stmt.reduce((a, s) => a + s[f], 0);
@@ -74,10 +81,11 @@ function compute(state, cfg) {
   const keptTotalP = kept.reduce((a, r) => a + toPaise(r.bal), 0);
   const removedTotalP = removed.reduce((a, r) => a + toPaise(r.bal), 0);
   const extractTotalP = extract.rows.reduce((a, r) => a + toPaise(r.bal), 0);
+  const skip = skippedSummary(extract, cfg.accountsText);
   let pivotTotalP = 0; for (const p of pivot.values()) pivotTotalP += p.cur + p.prev;
   const rajIn = rajeev.lines.reduce((a, l) => a + l.amount, 0);
   const rajFinal = rajeev.lines.reduce((a, l) => a + l.final, 0);
-  let openYtd = 0, openCf = 0; for (const o of opening.centres.values()) { openYtd += o.v.ytd; openCf += o.v.cf; }
+  let openYtd = 0, openCf = 0; for (const o of [...opening.centres.values(), ...(opening.manualRows || [])]) { openYtd += o.v.ytd; openCf += o.v.cf; }
 
   // Section 04 checks + completeness checks
   const C = fyLabelHeader(period.cur), Pv = fyLabelHeader(period.prev);
@@ -92,7 +100,8 @@ function compute(state, cfg) {
   add('04 · check 5', `Totals row: ${C} Pro CF + ${period.display} Pro as per Rajeev = YTD ${C}`, T.cfCur + T.raj, T.ytd);
   add('04 · check 5', `Rajeev total in the statement = total of the GST conversion (Part D, ${cfg.amountText} only)`, rajFinal, T.raj);
   if (cfg.summaryBlock) add('04 · check 6', `Summary block: ${Pv} Pro CF + YTD ${C} = Total, both lines equal the column totals`, T.cfPrev + T.ytd, T.total);
-  add('Completeness', 'ERP extract total = Working total + Removed lines total (no line lost)', extractTotalP / 100, (keptTotalP + removedTotalP) / 100);
+  if (skip.list.length) add('Completeness', 'ERP extract total = Working total + Removed lines total + other Housekeeping account lines skipped (no line lost)', (extractTotalP + skip.totalP) / 100, (keptTotalP + removedTotalP + skip.totalP) / 100);
+  else add('Completeness', 'ERP extract total = Working total + Removed lines total (no line lost)', extractTotalP / 100, (keptTotalP + removedTotalP) / 100);
   add('Completeness', 'Statement bookings (both years) = Working total (every booked centre is in the statement)', keptTotalP / 100, T.bkCur + T.bkPrev);
   add('Completeness', `Provision file: total of the "${cfg.amountText}" column = GST conversion input total`, rajeev.columnTotal, rajIn);
   add('Completeness · Step 13', `Opening ${C} Pro = last month's YTD ${C} total`, openYtd, T.proCur);
@@ -107,6 +116,7 @@ function compute(state, cfg) {
   const points = [];
   const pt = (code, name, point, amount, check) => points.push({ code, name, point, amount: amount == null ? null : Math.round(amount * 100) / 100, check });
   for (const s of stmt) {
+    if (s.manual) { pt(s.code, s.name, manualRowText(opening.manualRows.find((m) => m.row === s.manualRow), opening.columns), s.ytd, 'For information. Finance adds this row by hand; it stays until finance removes it from the statement.'); continue; }
     if (!rajByCode.has(s.code)) {
       const bk = s.bkCur + s.bkPrev;
       pt(s.code, s.name, `Not in Rajeev's provision file, so "${period.display} Pro as per Rajeev" is 0.` + (Math.abs(bk) > EPS ? ` ${fmtINR(bk)} was booked for this centre this month.` : ''), Math.abs(bk) > EPS ? bk : null, 'Check with Rajeev whether this centre should have a provision this month.');
@@ -115,10 +125,11 @@ function compute(state, cfg) {
   }
   for (const [code, n] of rajCount) if (n > 1) pt(code, (stmt.find((s) => s.code === code) || {}).name || '', `Listed ${n} times in Rajeev's provision file; the rows are added together (one statement row per centre).`, rajByCode.get(code), 'For information.');
   for (const b of rajeev.blanks) pt(b.code, (stmt.find((s) => s.code === b.code) || {}).name || '', `Rajeev's provision file row ${b.row}: "${cfg.amountText}" is blank, taken as 0.`, null, 'Check whether an amount is missing in Rajeev\'s file.');
-  for (const o of opening.merged || []) pt(o.code, o.name, mergedPointText(o, opening.columns), o.v.ytd, 'Confirm with finance that these rows belong to the same centre and should be carried forward together.');
+  if (skip.text) pt(null, '', skip.text, skip.totalP / 100, 'For information. Upload the same file to the other Housekeeping tool.');
   for (const o of opening.centres.values()) if (o.blank.ytd || o.blank.cf) pt(o.code, o.name, `Last month's statement row ${o.row}: ${o.blank.ytd ? 'YTD ' + C : ''}${o.blank.ytd && o.blank.cf ? ' and ' : ''}${o.blank.cf ? Pv + ' Pro CF' : ''} is blank, taken as 0.`, null, 'Check whether last month\'s balance is missing.');
   if (adjInfo) {
     for (const s of stmt) {
+      if (s.manual) continue;
       for (const { sopF, adjF, label } of NEG_COLUMNS(period)) {
         if (s[sopF] >= -EPS) continue;
         const inf = adjInfo[adjF];
@@ -190,7 +201,7 @@ async function buildWorkbook(state, R, meta, cfg, version) {
   const rEnd = 3 + rajeev.lines.length;
   wsRaj.getCell('F2').value = { formula: `SUM(F4:F${rEnd})`, result: R.totals.rajIn };
   wsRaj.getRow(3).values = [null, null, null, null, null, `${cfg.amountText} (per month, with GST)`, 'Basic', `With ${Math.round((g.finalFactor - 1) * 1000) / 10}%GST`, 'Cost Center Name (Summary)'];
-  const nameOf = new Map(R.stmt.map((s) => [s.code, s.name]));
+  const nameOf = new Map(R.stmt.filter((s) => !s.manual).map((s) => [s.code, s.name]));
   rajeev.lines.forEach((l, i) => {
     const rn = 4 + i;
     wsRaj.getRow(rn).values = [l.sno === '' ? null : l.sno, l.name || null, l.vendor || null, l.code, l.state || null, l.amount,
@@ -213,6 +224,10 @@ async function buildWorkbook(state, R, meta, cfg, version) {
   const PIV = (c) => `Pivot!$${c}$5:$${c}$${pEnd}`;
   R.stmt.forEach((s, i) => {
     const rn = first + i;
+    if (s.manual) { // manual fixed row: plain values, so the centre's bookings and Rajeev provision stay on its normal row
+      wsSum.getRow(rn).values = [null, s.code, s.name, s.proCur, s.proPrev, 0, 0, { formula: `D${rn}-F${rn}`, result: s.cfCur }, { formula: `E${rn}-G${rn}`, result: s.cfPrev }, 0, { formula: `H${rn}+J${rn}`, result: s.ytd }];
+      return;
+    }
     wsSum.getRow(rn).values = [
       null, s.code, s.name, s.proCur, s.proPrev,
       { formula: `SUMIFS(${PIV(pivAmt.cur)},${PIV(pivAmt.code)},$B${rn})`, result: s.bkCur },

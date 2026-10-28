@@ -6,7 +6,7 @@
   "scripts": {
     "build": "node build.js",
     "approve:security": "node build.js --approve-security",
-    "test": "npm run test:release && npm run test:security && npm run test:core && npm run test:hk-expenses && npm run test:hk-material",
+    "test": "npm run test:release && npm run test:security && npm run test:core && npm run test:hk-expenses && npm run test:hk-material && npm run test:hk-real",
     "test:release": "node test/release_check.js",
     "test:start:e2e": "node test/start_e2e.js",
     "test:security": "npm run test:security:tagger && npm run test:security:scenarios && npm run test:security:sep && npm run test:security:golden",
@@ -19,6 +19,7 @@
     "test:hk-expenses": "node test/hk-expenses/scenarios.js && node test/hk-expenses/sop_figures.js",
     "test:hk-expenses:e2e": "node test/hk-expenses/e2e.js",
     "test:hk-material": "node test/hk-material/scenarios.js && node test/hk-material/sop_figures.js",
+    "test:hk-real": "node test/hk-real/sep26.js",
     "test:hk-material:e2e": "node test/hk-material/e2e.js",
     "test:e2e": "npm run test:security:e2e && npm run test:hk-expenses:e2e && npm run test:hk-material:e2e && npm run test:start:e2e"
   },
