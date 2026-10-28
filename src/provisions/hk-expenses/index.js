@@ -50,6 +50,7 @@ module.exports = createEngine({
   opening: (period) => ({
     columns: [{ key: 'ytd', header: `YTD ${fyLabelHeader(period.cur)}`, choosable: true }, { key: 'cf', header: `${fyLabelHeader(period.prev)} Pro CF` }],
     aprilNote: true,
+    mergeDuplicates: true, // owner's decision (Oct 2026): a centre on several rows is added together and listed on "Points to check"
   }),
   provisionFile: { sheet: { test: /^\s*hk(?![a-z])/i, text: '"HK <Mon-YY>"' },amount: { startsWith: 'manpower', text: 'Manpower' }, noun: 'housekeeping' },
   stopInApril: false, // as Security: in April last month's statement has no "YTD FY{new}" column, and the reader stops with the April note

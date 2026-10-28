@@ -714,7 +714,7 @@ var ProvisionEngine = (() => {
   var require_opening = __commonJS({
     "src/core/opening.js"(exports, module) {
       "use strict";
-      var { InputError, norm, parseMonthYear, prevMonth, monthLabel, colLetter, MONTH_ABBR, pad2 } = require_common();
+      var { InputError, norm, parseMonthYear, prevMonth, monthLabel, colLetter, MONTH_ABBR, pad2, fmtINR } = require_common();
       var { infoText, infoNumber, infoInteger, sheetRows } = require_excel();
       var APRIL = "This is April — the start of a new financial year. The SOP does not describe the year-end roll-over, so the tool cannot proceed without finance's rule.";
       function readOpening(wb, period, opts, spec) {
@@ -813,27 +813,42 @@ var ProvisionEngine = (() => {
             continue;
           }
           for (const col of cols) if (!nums[col.key].ok) errs.push(`Last month's statement row ${r} (cost centre ${code.v}): ${col.header} — ${nums[col.key].why}.`);
-          if (centres.has(code.v)) {
-            const first = centres.get(code.v);
-            const nm = first.name ? ` (${first.name})` : "";
-            errs.push(`Last month's statement: cost centre ${code.v}${nm} appears more than once (rows ${first.row} and ${r}). The statement must have one row per cost centre, and the tool does not add rows together by itself. Ask finance how this centre's opening should be carried forward, correct last month's statement, and upload it again.`);
-            continue;
-          }
           const v = {}, blank = {};
           for (const col of cols) {
             v[col.key] = nums[col.key].ok ? nums[col.key].v || 0 : 0;
             blank[col.key] = nums[col.key].ok && nums[col.key].v === null;
           }
-          centres.set(code.v, { code: code.v, name: s.nameCol > 0 ? infoText(row[s.nameCol]) : "", row: r, v, blank });
+          if (centres.has(code.v)) {
+            const first = centres.get(code.v);
+            if (spec.mergeDuplicates) {
+              for (const col of cols) {
+                first.v[col.key] += v[col.key];
+                first.blank[col.key] = first.blank[col.key] && blank[col.key];
+              }
+              first.parts.push({ row: r, v });
+              continue;
+            }
+            const nm = first.name ? ` (${first.name})` : "";
+            errs.push(`Last month's statement: cost centre ${code.v}${nm} appears more than once (rows ${first.row} and ${r}). The statement must have one row per cost centre, and the tool does not add rows together by itself. Ask finance how this centre's opening should be carried forward, correct last month's statement, and upload it again.`);
+            continue;
+          }
+          centres.set(code.v, { code: code.v, name: s.nameCol > 0 ? infoText(row[s.nameCol]) : "", row: r, v: { ...v }, blank, parts: [{ row: r, v }] });
           order.push(code.v);
         }
         if (errs.length) throw new InputError(errs.slice(0, 50));
         if (!centres.size) throw new InputError(["Last month's statement: no cost-centre rows found under the headings."]);
         const colLetters = {};
         for (const col of cols) colLetters[col.key] = colLetter(use[col.key]);
-        return { sheet: s.g.name, headerRow: s.hdr, colLetters, title: stmtTitle, monthConfirmedByUser: !stmtMonth, centres, order, columns: cols, label: monthLabel(pm.y, pm.m) };
+        const merged = [...centres.values()].filter((o) => o.parts.length > 1);
+        return { sheet: s.g.name, headerRow: s.hdr, colLetters, title: stmtTitle, monthConfirmedByUser: !stmtMonth, centres, order, columns: cols, merged, label: monthLabel(pm.y, pm.m) };
       }
-      module.exports = { readOpening };
+      function mergedPointText(o, columns) {
+        const [c0, ...rest] = columns;
+        const nm = o.name || "Cost centre " + o.code;
+        const fig = (c) => o.parts.map((p) => fmtINR(p.v[c.key])).join(" + ");
+        return `${nm} appears ${o.parts.length} times in last month's statement (${fig(c0)}); rows added together. Rows ${o.parts.map((p) => p.row).join(", ")}: ${c0.header} ${fig(c0)} = ${fmtINR(o.v[c0.key])}` + rest.map((c) => `; ${c.header} ${fig(c)} = ${fmtINR(o.v[c.key])}`).join("") + ".";
+      }
+      module.exports = { readOpening, mergedPointText };
     }
   });
 
@@ -941,6 +956,21 @@ var ProvisionEngine = (() => {
     "src/core/tagger.js"(exports, module) {
       "use strict";
       var { MON, MONTH_ABBR, monthFromWord, fyOf, fyLabelWorking, ym, pad2, validDate } = require_common();
+      var MISSPELT = {
+        decamber: "december",
+        decembar: "december",
+        dicember: "december",
+        novembar: "november",
+        octomber: "october",
+        septmber: "september",
+        setember: "september",
+        febuary: "february",
+        feburary: "february",
+        janaury: "january",
+        agust: "august"
+      };
+      var RE_MISSPELT = new RegExp("(?<![a-z])(" + Object.keys(MISSPELT).join("|") + ")(?![a-z])", "gi");
+      var fixSpelling = (d) => d.replace(RE_MISSPELT, (w) => MISSPELT[w.toLowerCase()]);
       var RE_MONWORD = new RegExp("(?<![a-z])" + MON + "(?![a-z])", "gi");
       var RE_PERIOD = /period\D{0,20}?(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})\s*(?:to|till|upto|up to|-|–)\s*(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/i;
       var RE_ANCHOR_BEFORE = /(?:month\s*(?:of)?|\bfor(?:\s+the)?(?:\s+month)?(?:\s+of)?|service\s+(?:month|period)?\s*(?:of|for)?)\s*[:\-]?\s*$/i;
@@ -971,7 +1001,7 @@ var ProvisionEngine = (() => {
           } else if (x = rest.match(/^[\s\-'’.,]*(\d{1,2})(?:st|nd|rd|th)?[\s,]+(20\d{2})(?!\d)/)) {
             t.y = parseInt(x[2], 10);
             t.kind = "date";
-          } else if (x = rest.match(/^[\s\-'’.,\/]*(20\d{2}|\d{2})(?!\d)/)) {
+          } else if (x = rest.match(/^[\s\-'’.,\/_]*(20\d{2}|\d{2})(?!\d)/)) {
             let y = parseInt(x[1], 10);
             if (x[1].length === 2) y += 2e3;
             const after = rest.slice(x[0].length, x[0].length + 1);
@@ -996,21 +1026,26 @@ var ProvisionEngine = (() => {
         return out;
       }
       function proposeFY(desc, period) {
-        const d = String(desc || "");
+        const d = fixSpelling(String(desc || ""));
         const pYM = ym(period.y, period.m);
         const allowed = /* @__PURE__ */ new Set([period.cur, period.prev]);
+        let yearWritten = false;
         const res = (fy, basis2, sure) => {
           if (fy !== null && !allowed.has(fy)) {
-            return { fy: null, basis: `${basis2} → FY ${pad2(fy)}, which is neither ${fyLabelWorking(period.prev)} nor ${fyLabelWorking(period.cur)}`, sure: false };
+            return { fy: null, basis: `${basis2} → FY ${pad2(fy)}, which is neither ${fyLabelWorking(period.prev)} nor ${fyLabelWorking(period.cur)}`, sure: false, yearWritten };
           }
-          return { fy, basis: basis2, sure };
+          return { fy, basis: basis2, sure, yearWritten };
         };
+        const byWrittenYear = (fy, basis2) => res(fy, `${basis2} — tagged by the year written in the narration`, true);
         if (d.trim().replace(/^["'“”]+|["'“”]+$/g, "").trim().toLowerCase() === "journal import created") {
           return res(period.cur, `Finance rule: "Journal Import Created" is tagged to the current financial year (${fyLabelWorking(period.cur)})`, true);
         }
         const fm = d.match(RE_FYMARK);
         const fyMark = fm ? fm[2] ? parseInt(fm[2], 10) : parseInt(fm[1], 10) % 100 : null;
         const toks = monthTokens(d, period);
+        const bd = d.match(RE_BILLDATE);
+        const billDate = bd && validDate(parseInt(bd[1], 10), parseInt(bd[2], 10), parseInt(bd[3], 10)) ? { m: parseInt(bd[2], 10), y: parseInt(bd[3], 10), text: `${bd[1]}-${bd[2]}-${bd[3]}` } : null;
+        const isCand = (t) => t.anchored && (t.kind === "year" || t.kind === "fyform" || t.kind === "date");
         const cands = [];
         let ambiguous = null;
         const p = d.match(RE_PERIOD);
@@ -1023,12 +1058,13 @@ var ProvisionEngine = (() => {
             cands.push({ y: y1, m: m1, fy: fyOf(y1, m1), text: `${p[1]}-${p[2]}-${p[3]} to ${p[4]}-${p[5]}-${p[6]}`, period: true, y2, m2 });
           }
         }
-        for (const t of toks) if (t.anchored && (t.kind === "year" || t.kind === "fyform")) cands.push({ y: t.y, m: t.m, fy: t.fy, text: `${MONTH_ABBR[t.m]}-${t.y}` });
+        for (const t of toks) if (isCand(t)) cands.push({ y: t.y, m: t.m, fy: t.fy, text: `${MONTH_ABBR[t.m]}-${t.y}` });
+        yearWritten = !!p || fyMark !== null || !!billDate || toks.some((t) => t.y !== null && t.kind !== "ref");
         if (cands.length) {
           const label = [...new Set(cands.map((c) => c.text))].join(", ");
           const fys = new Set(cands.map((c) => c.fy));
           const future = cands.some((c) => ym(c.y, c.m) > pYM || c.period && ym(c.y2, c.m2) > pYM);
-          const otherDated = toks.filter((t) => !(t.anchored && (t.kind === "year" || t.kind === "fyform")) && t.y !== null);
+          const otherDated = toks.filter((t) => !isCand(t) && t.y !== null);
           const otherUndated = toks.filter((t) => t.y === null && !cands.some((c) => c.m === t.m));
           let why = null;
           if (future) why = `service month ${label} is later than the posting month`;
@@ -1039,11 +1075,12 @@ var ProvisionEngine = (() => {
           else if (fyMark !== null && fyMark !== [...fys][0]) why = `the narration also says FY ${pad2(fyMark)}`;
           if (!why) return res([...fys][0], `Service ${cands.some((c) => c.period) ? "period" : "month"} ${label}`, true);
           const sugg2 = fys.size === 1 && !future && !ambiguous && !otherDated.some((t) => t.kind !== "date" && t.fy !== [...fys][0]) && (fyMark === null || fyMark === [...fys][0]) ? [...fys][0] : null;
-          return res(sugg2, `Please check: ${why}` + (sugg2 !== null ? ` — suggested ${fyLabelWorking(sugg2)}` : ""), false);
+          if (sugg2 !== null) return byWrittenYear(sugg2, `Service ${cands.some((c) => c.period) ? "period" : "month"} ${label} (${why})`);
+          return res(null, `Please check: ${why}`, false);
         }
         const dated = toks.filter((t) => t.y !== null);
         const datedFys = new Set(dated.map((t) => t.fy));
-        let sugg = null, basis = "No service month in the narration";
+        let sugg = null, basis = "No service month in the narration", fromYear = false;
         const nm = d.match(new RegExp("(?:month\\s*(?:of)?|\\bfor(?:\\s+the)?(?:\\s+month)?(?:\\s+of)?)\\s*[:\\-]?\\s*" + MON + "(?![a-z])", "i")) || d.match(RE_MON_MONTH);
         if (nm) {
           const mo = monthFromWord(nm[1]);
@@ -1053,33 +1090,37 @@ var ProvisionEngine = (() => {
           if (dated.some((t) => t.fy !== sugg)) {
             sugg = null;
             basis = `Month "${nm[1]}" without a year, and another date in a different financial year`;
+          } else if (dated.some((t) => t.kind !== "ref")) fromYear = true;
+          else if (billDate && fyOf(billDate.y, billDate.m) === sugg) {
+            fromYear = true;
+            basis += `; the bill date (${billDate.text}) is in the same financial year`;
+          } else if (billDate) {
+            sugg = null;
+            basis = `Month "${nm[1]}" without a year, and the bill date (${billDate.text}) is in a different financial year`;
           }
         } else if (dated.length) {
           const undatedOther = toks.some((t) => t.y === null && !dated.some((x) => x.m === t.m));
           if (datedFys.size === 1 && !undatedOther && !dated.some((t) => ym(t.y, t.m) > pYM)) {
             sugg = [...datedFys][0];
             basis = `A month is mentioned (${dated.map((t) => t.word + " " + t.y).join(", ")}) but not as the service month — suggested from it`;
+            fromYear = dated.some((t) => t.kind !== "ref");
           } else basis = `Months mentioned (${dated.map((t) => t.word + " " + t.y).join(", ")}) but not as the service month`;
-        } else {
-          const bd = d.match(RE_BILLDATE);
-          if (bd) {
-            const [dd, mo, y] = bd.slice(1).map((x) => parseInt(x, 10));
-            if (validDate(dd, mo, y)) {
-              sugg = fyOf(y, mo);
-              basis = `Only a bill date (${bd[1]}-${bd[2]}-${bd[3]}) — suggested from the bill date`;
-            }
-          }
+        } else if (billDate) {
+          sugg = fyOf(billDate.y, billDate.m);
+          basis = `Only a bill date (${billDate.text}) — suggested from the bill date`;
+          fromYear = true;
         }
         if (fyMark !== null) {
           if (sugg === null) {
             sugg = fyMark;
             basis += ` — narration says FY ${pad2(fyMark)}`;
+            fromYear = true;
           } else if (sugg !== fyMark) {
             sugg = null;
             basis += ` — but the narration also says FY ${pad2(fyMark)}`;
-          }
+          } else fromYear = true;
         }
-        return res(sugg, basis, false);
+        return fromYear && sugg !== null ? byWrittenYear(sugg, basis) : res(sugg, basis, false);
       }
       module.exports = { proposeFY, monthTokens };
     }
@@ -1100,7 +1141,7 @@ var ProvisionEngine = (() => {
           if (P2P_SOURCES.includes(src)) {
             r.keptAs = "P2P booking (Step 7)";
             kept.push(r);
-          } else if (src === "spreadsheet" && by === GST_RECLASS_CREATOR) {
+          } else if (by === GST_RECLASS_CREATOR) {
             r.keptAs = "GST reclass (Step 8)";
             kept.push(r);
           } else {
@@ -1127,6 +1168,7 @@ var ProvisionEngine = (() => {
           r.suggestFy = p.fy;
           r.basis = p.basis;
           r.needsConfirm = !p.sure;
+          r.yearWritten = !!p.yearWritten;
         });
         return { kept, removed };
       }
@@ -1147,7 +1189,7 @@ var ProvisionEngine = (() => {
           }
         }
       }
-      var isWrongKind = (r) => !P2P_SOURCES.includes(r.source.trim().toLowerCase()) && !(r.source.trim().toLowerCase() === "spreadsheet" && r.createdBy.trim().toLowerCase() === GST_RECLASS_CREATOR);
+      var isWrongKind = (r) => !P2P_SOURCES.includes(r.source.trim().toLowerCase()) && r.createdBy.trim().toLowerCase() !== GST_RECLASS_CREATOR;
       module.exports = { cleanLines, applyTags, isWrongKind, P2P_SOURCES, GST_RECLASS_CREATOR };
     }
   });
@@ -1330,7 +1372,7 @@ var ProvisionEngine = (() => {
           const rowNo = i + 2;
           wsWork.addRow(cols.map((c) => {
             if (c.kind === "exp") return fyLabelWorking(r.fy);
-            if (c.kind === "remarks") return r.tagBy === "Default" ? `Actual Booking - ${fyLabelWorking(period.cur)} by default (year not in description)` : "Actual Booking";
+            if (c.kind === "remarks") return r.tagBy === "Default" ? `Actual Booking - ${fyLabelWorking(period.cur)} by default (${r.yearWritten ? "year in description unclear: check" : "year not in description"})` : "Actual Booking";
             if (c.kind === "glmonth") {
               const g = r.glDate;
               return g ? new Date(Date.UTC(g.y, g.m - 1, 1)) : null;
@@ -1415,6 +1457,7 @@ var ProvisionEngine = (() => {
       var { applyNegativeCarryForward, checkList } = require_rules();
       var { isWrongKind, GST_RECLASS_CREATOR } = require_clean();
       var { writeRaw, writeWorking, writePoints } = require_sheets();
+      var { mergedPointText } = require_opening();
       var NEG_COLUMNS = (period) => [
         { sopF: "cfCurSop", adjF: "adjCur", finF: "cfCur", label: `${fyLabelHeader(period.cur)} Pro CF` },
         { sopF: "cfPrevSop", adjF: "adjPrev", finF: "cfPrev", label: `${fyLabelHeader(period.prev)} Pro CF` }
@@ -1515,6 +1558,7 @@ var ProvisionEngine = (() => {
         }
         for (const [code, n] of rajCount) if (n > 1) pt(code, (stmt.find((s) => s.code === code) || {}).name || "", `Listed ${n} times in Rajeev's provision file; the rows are added together (one statement row per centre).`, rajByCode.get(code), "For information.");
         for (const b of rajeev.blanks) pt(b.code, (stmt.find((s) => s.code === b.code) || {}).name || "", `Rajeev's provision file row ${b.row}: "${cfg.amountText}" is blank, taken as 0.`, null, "Check whether an amount is missing in Rajeev's file.");
+        for (const o of opening.merged || []) pt(o.code, o.name, mergedPointText(o, opening.columns), o.v.ytd, "Confirm with finance that these rows belong to the same centre and should be carried forward together.");
         for (const o of opening.centres.values()) if (o.blank.ytd || o.blank.cf) pt(o.code, o.name, `Last month's statement row ${o.row}: ${o.blank.ytd ? "YTD " + C : ""}${o.blank.ytd && o.blank.cf ? " and " : ""}${o.blank.cf ? Pv + " Pro CF" : ""} is blank, taken as 0.`, null, "Check whether last month's balance is missing.");
         if (adjInfo) {
           for (const s of stmt) {
@@ -1526,7 +1570,8 @@ var ProvisionEngine = (() => {
             }
           }
         }
-        const defaulted = kept.filter((r) => r.tagBy === "Default");
+        const defaulted = kept.filter((r) => r.tagBy === "Default" && !r.yearWritten);
+        for (const r of kept) if (r.tagBy === "Default" && r.yearWritten) pt(r.seg1, r.ccName, `ERP row ${r.erpRow}: the description writes a year, but the year is unclear (${r.basis}). Counted as ${fyLabelWorking(period.cur)} by default. "${r.desc.slice(0, 120)}"`, r.bal, "Check which financial year this line belongs to.");
         if (defaulted.length) pt(null, "", `${defaulted.length} Working line(s) had no year in the description and were counted as ${fyLabelWorking(period.cur)} by default (total ${fmtINR(defaulted.reduce((a, r) => a + r.bal, 0))}). They are marked in the Remarks column of the Working sheet.`, defaulted.reduce((a, r) => a + r.bal, 0), "For information. Check these lines if any of them belong to last year.");
         if (noVendor) pt(null, "", `${noVendor} Working line(s) have no vendor name (Attribute 3 and Party Name are both blank in the ERP extract).`, null, "For information. These lines are still counted.");
         if (!kept.length) pt(null, "", "No P2P or GST reclass lines in the ERP extract, so all booking columns are 0.", 0, "Confirm the ERP extract is complete for this month.");
@@ -1748,7 +1793,9 @@ var ProvisionEngine = (() => {
         },
         opening: (period) => ({
           columns: [{ key: "ytd", header: `YTD ${fyLabelHeader(period.cur)}`, choosable: true }, { key: "cf", header: `${fyLabelHeader(period.prev)} Pro CF` }],
-          aprilNote: true
+          aprilNote: true,
+          mergeDuplicates: true
+          // owner's decision (Oct 2026): a centre on several rows is added together and listed on "Points to check"
         }),
         provisionFile: { sheet: { test: /^\s*hk(?![a-z])/i, text: '"HK <Mon-YY>"' }, amount: { startsWith: "manpower", text: "Manpower" }, noun: "housekeeping" },
         stopInApril: false,

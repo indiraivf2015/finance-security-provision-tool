@@ -43,7 +43,7 @@ function writeWorking(wsWork, extract, kept, period) {
     const rowNo = i + 2;
     wsWork.addRow(cols.map((c) => {
       if (c.kind === 'exp') return fyLabelWorking(r.fy);
-      if (c.kind === 'remarks') return r.tagBy === 'Default' ? `Actual Booking - ${fyLabelWorking(period.cur)} by default (year not in description)` : 'Actual Booking';
+      if (c.kind === 'remarks') return r.tagBy === 'Default' ? `Actual Booking - ${fyLabelWorking(period.cur)} by default (${r.yearWritten ? 'year in description unclear: check' : 'year not in description'})` : 'Actual Booking';
       if (c.kind === 'glmonth') { const g = r.glDate; return g ? new Date(Date.UTC(g.y, g.m - 1, 1)) : null; }
       const k = c.h.k;
       if (k === 'balance') return r.bal;

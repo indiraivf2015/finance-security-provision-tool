@@ -5,6 +5,8 @@ const { proposeFY } = require('./tagger');
 
 // SOP Step 7 says "keep every row whose source is Payables". In the ERP extract the P2P invoice bookings appear as
 // "IIVF P2P" or "Payables", and finance's own working keeps both (owner's decision, Oct 2026). Step 8: GST reclass.
+// Housekeeping change (owner's instruction, Oct 2026; Security unchanged): a line created by the GST reclass user is kept
+// whatever its JE_SOURCE_NAME says ("Spreadsheet" in the ERP download, but e.g. "GST Reclass" once relabelled).
 const P2P_SOURCES = ['iivf p2p', 'payables'];
 const GST_RECLASS_CREATOR = 'taxverification2@indiraivf.in';
 
@@ -15,7 +17,7 @@ function cleanLines(rows, period) {
     const src = r.source.trim().toLowerCase();
     const by = r.createdBy.trim().toLowerCase();
     if (P2P_SOURCES.includes(src)) { r.keptAs = 'P2P booking (Step 7)'; kept.push(r); }
-    else if (src === 'spreadsheet' && by === GST_RECLASS_CREATOR) { r.keptAs = 'GST reclass (Step 8)'; kept.push(r); }
+    else if (by === GST_RECLASS_CREATOR) { r.keptAs = 'GST reclass (Step 8)'; kept.push(r); }
     else { r.removedWhy = src === 'spreadsheet' ? 'Spreadsheet entry not created by ' + GST_RECLASS_CREATOR + ' (Step 8)' : `Source "${r.source || '(blank)'}" is not a P2P booking (Step 7)`; removed.push(r); }
   }
   // Step 9: vendor name
@@ -32,6 +34,7 @@ function cleanLines(rows, period) {
     r.suggestFy = p.fy;
     r.basis = p.basis;
     r.needsConfirm = !p.sure;
+    r.yearWritten = !!p.yearWritten;
   });
   return { kept, removed };
 }
@@ -48,6 +51,6 @@ function applyTags(kept, period, tagChoice) {
   }
 }
 
-const isWrongKind = (r) => !P2P_SOURCES.includes(r.source.trim().toLowerCase()) && !(r.source.trim().toLowerCase() === 'spreadsheet' && r.createdBy.trim().toLowerCase() === GST_RECLASS_CREATOR);
+const isWrongKind = (r) => !P2P_SOURCES.includes(r.source.trim().toLowerCase()) && r.createdBy.trim().toLowerCase() !== GST_RECLASS_CREATOR;
 
 module.exports = { cleanLines, applyTags, isWrongKind, P2P_SOURCES, GST_RECLASS_CREATOR };

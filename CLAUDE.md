@@ -26,14 +26,26 @@ workbook. No backend: finance data never leaves the user's computer.
 - `src/security/`: FROZEN copy of the approved tool. `engine.js` (all logic, UMD), `ui.html` (2-step wizard; placeholders
   `/*__EXCELJS__*/`, `/*__ENGINE__*/`), `APPROVED.sha256` (the lock).
 - `src/core/`: shared code for Housekeeping and later provisions (CommonJS; copied from Security's engine, never imported
-  by it). `common` (months, FY, ₹ format), `excel` (strict cell reading, styles), `tagger` (Step 6, copied line for line),
-  `extract` (Steps 1-4; accounts as a list), `clean` (Steps 7-9 + tags + "no year -> current FY"), `opening` (Step 13,
-  columns from settings), `provision-file` (Rajeev's file: sheet by name, column by heading), `rules` (negative-CF rule,
+  by it). `common` (months, FY, ₹ format), `excel` (strict cell reading, styles), `tagger` (Step 6: Security's tagger plus
+  the Housekeeping year changes below), `extract` (Steps 1-4; accounts as a list), `clean` (Steps 7-9 + tags +
+  "no year -> current FY"), `opening` (Step 13, columns from settings; `mergeDuplicates` adds a centre's repeated rows),
+  `provision-file` (Rajeev's file: sheet by name, column by heading), `rules` (negative-CF rule,
   checks), `sheets` (Raw, Working, Points to check), `fy-statement` (the Security-style FY{cur}/FY{prev} statement,
   Steps 10-17), `engine` (createEngine(def): load/analyse/build), `ui/` (page.html + app.js: the shared screens).
 - `src/provisions/<id>/index.js` + `meta.json`: one provision = settings + what differs; build.js bundles it with esbuild-wasm
   (`require('exceljs')` -> the inlined ExcelJS) into `<id>.html`. Adding a provision = a new folder; the start page card is automatic.
 - Security of the pages: CSP `connect-src 'none'`, no unsafe-eval, DOM built with textContent only (no innerHTML).
+
+## Housekeeping-only changes, Oct 2026 (owner's instructions; Security unchanged)
+- **Year reading** (src/core/tagger.js): a year written in the narration is used; "current FY by default" only when no year
+  is written at all. Reads "Nov_25", "DEC-25", "july 25", misspellings (DECAMBER, SEPTMBER... list `MISSPELT`), "DECEMBER5 2025";
+  a bill date (dd-mm-yyyy) or FY mark counts as a written year. Written years that disagree (or a month later than the
+  posting month) stay on the default and each line is listed on Points to check. test/core/tagger_hk.js; tagger_parity.js
+  proves lines Security tags itself are unchanged.
+- **Repeated centre in last month's statement**: rows added together (column totals unchanged), listed on Points to check
+  with each row's figures. Security's tool still stops.
+- **GST reclass (Step 8)**: every line created by taxverification2@indiraivf.in is kept, whatever JE_SOURCE_NAME says
+  ("Spreadsheet" in the download, "GST Reclass" once relabelled). Security still requires "Spreadsheet".
 
 ## Housekeeping Expenses (src/provisions/hk-expenses, SOP v1.1 Oct 2026)
 - Accounts 51610, 51612, 51613, 51614 only (51611 = Material); any other account stops the tool.

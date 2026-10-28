@@ -1,8 +1,21 @@
 // Step 6: proposes each line's financial year ("Exp Year") from its Line Description narration.
-// Copied line for line from the approved Security engine (src/security/engine.js, monthTokens + proposeFY);
-// test/core/tagger_parity.js runs the Security tagger cases against both copies.
+// Copied from the approved Security engine (src/security/engine.js, monthTokens + proposeFY), with the
+// Housekeeping changes of Oct 2026 (owner's instruction; Security itself is unchanged):
+//   1. a year written after a month is read with "_" too ("Nov_25"), and common misspellings of month names
+//      are read as the month ("DECAMBER 2025");
+//   2. a service month followed by a day and a year ("for the month of DECEMBER5 2025") is a service month;
+//   3. "current FY by default" is only for lines where no year is written at all: when the narration's
+//      written year(s) — a month with a year, a bill date, an FY mark — give one financial year, the line is
+//      tagged with it. Lines whose written years disagree stay on the default and are marked yearWritten.
+// test/core/tagger_parity.js checks that the core differs from Security only on lines Security does not tag.
 'use strict';
 const { MON, MONTH_ABBR, monthFromWord, fyOf, fyLabelWorking, ym, pad2, validDate } = require('./common');
+
+// Misspelt month names seen in ERP narrations, read as the month. Whole words only.
+const MISSPELT = { decamber: 'december', decembar: 'december', dicember: 'december', novembar: 'november', octomber: 'october',
+  septmber: 'september', setember: 'september', febuary: 'february', feburary: 'february', janaury: 'january', agust: 'august' };
+const RE_MISSPELT = new RegExp('(?<![a-z])(' + Object.keys(MISSPELT).join('|') + ')(?![a-z])', 'gi');
+const fixSpelling = (d) => d.replace(RE_MISSPELT, (w) => MISSPELT[w.toLowerCase()]);
 
 const RE_MONWORD = new RegExp('(?<![a-z])' + MON + '(?![a-z])', 'gi');
 const RE_PERIOD = /period\D{0,20}?(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})\s*(?:to|till|upto|up to|-|–)\s*(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/i;
@@ -32,7 +45,7 @@ function monthTokens(d, period) {
       const fyEnd = 2000 + parseInt(x[2], 10); t.y = mo >= 4 ? fyEnd - 1 : fyEnd; t.kind = 'fyform';               // "Mar 26-27"
     } else if ((x = rest.match(/^[\s\-'’.,]*(\d{1,2})(?:st|nd|rd|th)?[\s,]+(20\d{2})(?!\d)/))) {
       t.y = parseInt(x[2], 10); t.kind = 'date';                                                                    // "Sep 25, 2026"
-    } else if ((x = rest.match(/^[\s\-'’.,\/]*(20\d{2}|\d{2})(?!\d)/))) {
+    } else if ((x = rest.match(/^[\s\-'’.,\/_]*(20\d{2}|\d{2})(?!\d)/))) {
       let y = parseInt(x[1], 10); if (x[1].length === 2) y += 2000;
       const after = rest.slice(x[0].length, x[0].length + 1);
       if (y >= period.y - 5 && y <= period.y + 1) { t.y = y; t.kind = 'year'; if (after === '/' || after === '_') t.kind = 'ref'; }
@@ -48,22 +61,28 @@ function monthTokens(d, period) {
 
 /**
  * Proposes the financial year for one booking line (SOP Step 6).
- * Returns { fy|null, basis, sure }.
+ * Returns { fy|null, basis, sure, yearWritten }.
  *  sure=true  → the narration states the service month/period explicitly ("for the month of June 2026",
  *               "month of January 2025-26", "Service Period 01-06-2026 to 30-06-2026") AND nothing else in the
- *               narration points to a different financial year. Tagged automatically.
- *  sure=false → anything else. The user must choose; a suggestion is shown only when the narration itself gives one.
+ *               narration points to a different financial year; or (Housekeeping change 3) the year(s) written in
+ *               the narration give one financial year. Tagged automatically.
+ *  sure=false → anything else: no year written, or the written years disagree. Counted as the current FY by default.
+ *  yearWritten → the narration writes a year (a month with a year, a bill date, a service period or an FY mark;
+ *               invoice-number references like "VC/MH/MAY-26/21" do not count).
  */
 function proposeFY(desc, period) {
-  const d = String(desc || '');
+  const d = fixSpelling(String(desc || ''));
   const pYM = ym(period.y, period.m);
   const allowed = new Set([period.cur, period.prev]);
+  let yearWritten = false;
   const res = (fy, basis, sure) => {
     if (fy !== null && !allowed.has(fy)) {
-      return { fy: null, basis: `${basis} → FY ${pad2(fy)}, which is neither ${fyLabelWorking(period.prev)} nor ${fyLabelWorking(period.cur)}`, sure: false };
+      return { fy: null, basis: `${basis} → FY ${pad2(fy)}, which is neither ${fyLabelWorking(period.prev)} nor ${fyLabelWorking(period.cur)}`, sure: false, yearWritten };
     }
-    return { fy, basis, sure };
+    return { fy, basis, sure, yearWritten };
   };
+  // Housekeeping change 3: a suggestion that comes from a year written in the narration is a tag
+  const byWrittenYear = (fy, basis) => res(fy, `${basis} — tagged by the year written in the narration`, true);
   // Finance rule (confirmed by the finance team): narration "Journal Import Created" = current financial year of the posting month
   if (d.trim().replace(/^["'“”]+|["'“”]+$/g, '').trim().toLowerCase() === 'journal import created') {
     return res(period.cur, `Finance rule: "Journal Import Created" is tagged to the current financial year (${fyLabelWorking(period.cur)})`, true);
@@ -71,6 +90,9 @@ function proposeFY(desc, period) {
   const fm = d.match(RE_FYMARK);
   const fyMark = fm ? (fm[2] ? parseInt(fm[2], 10) : parseInt(fm[1], 10) % 100) : null;
   const toks = monthTokens(d, period);
+  const bd = d.match(RE_BILLDATE);
+  const billDate = bd && validDate(parseInt(bd[1], 10), parseInt(bd[2], 10), parseInt(bd[3], 10)) ? { m: parseInt(bd[2], 10), y: parseInt(bd[3], 10), text: `${bd[1]}-${bd[2]}-${bd[3]}` } : null;
+  const isCand = (t) => t.anchored && (t.kind === 'year' || t.kind === 'fyform' || t.kind === 'date');
 
   // Service-month candidates: explicit service period, or a month WITH a year right after "for the month of" / "for" / "month of"
   const cands = [];
@@ -86,13 +108,14 @@ function proposeFY(desc, period) {
       cands.push({ y: y1, m: m1, fy: fyOf(y1, m1), text: `${p[1]}-${p[2]}-${p[3]} to ${p[4]}-${p[5]}-${p[6]}`, period: true, y2, m2 });
     }
   }
-  for (const t of toks) if (t.anchored && (t.kind === 'year' || t.kind === 'fyform')) cands.push({ y: t.y, m: t.m, fy: t.fy, text: `${MONTH_ABBR[t.m]}-${t.y}` });
+  for (const t of toks) if (isCand(t)) cands.push({ y: t.y, m: t.m, fy: t.fy, text: `${MONTH_ABBR[t.m]}-${t.y}` });
+  yearWritten = !!p || fyMark !== null || !!billDate || toks.some((t) => t.y !== null && t.kind !== 'ref');
 
   if (cands.length) {
     const label = [...new Set(cands.map((c) => c.text))].join(', ');
     const fys = new Set(cands.map((c) => c.fy));
     const future = cands.some((c) => ym(c.y, c.m) > pYM || (c.period && ym(c.y2, c.m2) > pYM));
-    const otherDated = toks.filter((t) => !(t.anchored && (t.kind === 'year' || t.kind === 'fyform')) && t.y !== null);
+    const otherDated = toks.filter((t) => !isCand(t) && t.y !== null);
     const otherUndated = toks.filter((t) => t.y === null && !cands.some((c) => c.m === t.m));
     let why = null;
     if (future) why = `service month ${label} is later than the posting month`;
@@ -104,31 +127,37 @@ function proposeFY(desc, period) {
     if (!why) return res([...fys][0], `Service ${cands.some((c) => c.period) ? 'period' : 'month'} ${label}`, true);
     // A bill/document date in another year does not cancel the suggestion (e.g. March service billed in April); anything else does
     const sugg = (fys.size === 1 && !future && !ambiguous && !otherDated.some((t) => t.kind !== 'date' && t.fy !== [...fys][0]) && (fyMark === null || fyMark === [...fys][0])) ? [...fys][0] : null;
-    return res(sugg, `Please check: ${why}` + (sugg !== null ? ` — suggested ${fyLabelWorking(sugg)}` : ''), false);
+    if (sugg !== null) return byWrittenYear(sugg, `Service ${cands.some((c) => c.period) ? 'period' : 'month'} ${label} (${why})`);
+    return res(null, `Please check: ${why}`, false);
   }
 
-  // No explicit service month → the user decides. Offer a suggestion only when the narration itself contains one.
+  // No explicit service month. A suggestion is a tag only when it comes from a year written in the narration.
   const dated = toks.filter((t) => t.y !== null);
   const datedFys = new Set(dated.map((t) => t.fy));
-  let sugg = null, basis = 'No service month in the narration';
+  let sugg = null, basis = 'No service month in the narration', fromYear = false;
   const nm = d.match(new RegExp('(?:month\\s*(?:of)?|\\bfor(?:\\s+the)?(?:\\s+month)?(?:\\s+of)?)\\s*[:\\-]?\\s*' + MON + '(?![a-z])', 'i')) || d.match(RE_MON_MONTH);
   if (nm) {
     const mo = monthFromWord(nm[1]); const y = mo <= period.m ? period.y : period.y - 1;
     sugg = fyOf(y, mo); basis = `Month "${nm[1]}" without a year — suggested ${MONTH_ABBR[mo]}-${y}, the latest ${MONTH_ABBR[mo]} up to the posting month`;
     if (dated.some((t) => t.fy !== sugg)) { sugg = null; basis = `Month "${nm[1]}" without a year, and another date in a different financial year`; }
+    else if (dated.some((t) => t.kind !== 'ref')) fromYear = true;
+    else if (billDate && fyOf(billDate.y, billDate.m) === sugg) { fromYear = true; basis += `; the bill date (${billDate.text}) is in the same financial year`; }
+    else if (billDate) { sugg = null; basis = `Month "${nm[1]}" without a year, and the bill date (${billDate.text}) is in a different financial year`; }
   } else if (dated.length) {
     const undatedOther = toks.some((t) => t.y === null && !dated.some((x) => x.m === t.m));
-    if (datedFys.size === 1 && !undatedOther && !dated.some((t) => ym(t.y, t.m) > pYM)) { sugg = [...datedFys][0]; basis = `A month is mentioned (${dated.map((t) => t.word + ' ' + t.y).join(', ')}) but not as the service month — suggested from it`; }
-    else basis = `Months mentioned (${dated.map((t) => t.word + ' ' + t.y).join(', ')}) but not as the service month`;
-  } else {
-    const bd = d.match(RE_BILLDATE);
-    if (bd) { const [dd, mo, y] = bd.slice(1).map((x) => parseInt(x, 10)); if (validDate(dd, mo, y)) { sugg = fyOf(y, mo); basis = `Only a bill date (${bd[1]}-${bd[2]}-${bd[3]}) — suggested from the bill date`; } }
+    if (datedFys.size === 1 && !undatedOther && !dated.some((t) => ym(t.y, t.m) > pYM)) {
+      sugg = [...datedFys][0]; basis = `A month is mentioned (${dated.map((t) => t.word + ' ' + t.y).join(', ')}) but not as the service month — suggested from it`;
+      fromYear = dated.some((t) => t.kind !== 'ref');
+    } else basis = `Months mentioned (${dated.map((t) => t.word + ' ' + t.y).join(', ')}) but not as the service month`;
+  } else if (billDate) {
+    sugg = fyOf(billDate.y, billDate.m); basis = `Only a bill date (${billDate.text}) — suggested from the bill date`; fromYear = true;
   }
   if (fyMark !== null) {
-    if (sugg === null) { sugg = fyMark; basis += ` — narration says FY ${pad2(fyMark)}`; }
+    if (sugg === null) { sugg = fyMark; basis += ` — narration says FY ${pad2(fyMark)}`; fromYear = true; }
     else if (sugg !== fyMark) { sugg = null; basis += ` — but the narration also says FY ${pad2(fyMark)}`; }
+    else fromYear = true;
   }
-  return res(sugg, basis, false);
+  return fromYear && sugg !== null ? byWrittenYear(sugg, basis) : res(sugg, basis, false);
 }
 
 module.exports = { proposeFY, monthTokens };

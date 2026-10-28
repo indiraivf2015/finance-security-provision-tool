@@ -65,6 +65,12 @@ test('Step 2: "Multiple Accounts" filled in stops the tool', () => expectError({
 test('Steps 7-8: IIVF P2P, Payables and GST reclass kept; other Spreadsheet removed', async () => {
   const { st } = await run(); return st.removed.length === 1 && st.removed[0].bal === 111 && st.kept.length === 6 ? true : `kept ${st.kept.length} removed ${st.removed.map((r) => r.bal)}`;
 });
+test('Step 8 (Housekeeping): a taxverification2 line is kept whatever its source says; the same source by anyone else is removed', async () => {
+  const tv = 'taxverification2@indiraivf.in';
+  const { st } = await run({ lines: BASE_LINES.concat([L(8001, 701, 'GST reclass for the month of August 2026', { source: 'GST Reclass', by: tv }), L(8001, 702, 'GST reclass for the month of August 2026', { source: 'Manual', by: tv }), L(8001, 703, 'Relabelled for the month of August 2026', { source: 'GST Reclass', by: 'someone@indiraivf.in' })]) });
+  const k = (b) => st.kept.some((r) => r.bal === b), x = (b) => st.removed.some((r) => r.bal === b);
+  return k(701) && k(702) && x(703) && st.kept.filter((r) => r.bal > 700 && r.bal < 703).every((r) => r.keptAs === 'GST reclass (Step 8)') ? true : `kept ${st.kept.map((r) => r.bal)} removed ${st.removed.map((r) => r.bal)}`;
+});
 test('Step 10: FY 26 line stays in Working, is left out of the statement and listed in Points to check', async () => {
   const { R, st, buffer } = await run();
   const inWorking = st.kept.some((r) => r.bal === 999 && r.fy === 26);
@@ -126,6 +132,13 @@ test('Opening: statement for the wrong month stops the tool', () => expectError(
 test('Opening: two "YTD" columns → the user picks one', async () => {
   const r = await run({ openHdr: OPEN_HDR.concat(['YTD']), openRows: openRows(CODES).map((x) => x.concat([1])) });
   return r.needChoice && r.needChoice.kind === 'openingYtdCol' && r.needChoice.header === 'YTD' ? true : JSON.stringify(r.needChoice || 'no question');
+});
+test('Opening: a centre on two rows of last month\'s statement is added together, listed, totals unchanged', async () => {
+  const rows = openRows(CODES).concat([[CODES[2], NAME(CODES[2]), 0, 0, 0, 0, 5000000]]);
+  const a = await run(); const b = await run({ openRows: rows });
+  const s = b.R.stmt.find((x) => x.code === CODES[2]); const s0 = a.R.stmt.find((x) => x.code === CODES[2]);
+  const p = b.R.points.find((x) => x.code === CODES[2] && /appears 2 times in last month's statement \(₹[\d,]+\.\d\d \+ ₹50,00,000\.00\); rows added together\./.test(x.point));
+  return s && near(s.open, s0.open + 5000000) && near(b.R.T.open, a.R.T.open + 5000000) && b.R.stmt.filter((x) => x.code === CODES[2]).length === 1 && p ? true : `open ${s && s.open} vs ${s0.open}, point ${!!p}`;
 });
 test('Provision file: sheet for another month stops the tool', () => expectError({ sheet: 'HK Aug-26' }, /sheet used is "HK Aug-26"/));
 test('April: stops, the SOP has no year-end roll-over rule', () => expectError({ period: 'Apr-27', from: '2027-04-01', to: '2027-04-30', sheet: 'HK Apr-27', openTitle: 'Material Provision for the month of Mar-27', lines: [L(8001, 10, 'for the month of April 2027')] }, /April.*year-end/));

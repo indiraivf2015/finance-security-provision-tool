@@ -18,6 +18,7 @@ const { ExcelJS, formatTable, FMT_AMT2, HEAD_FILL, THIN, BOX } = require('./exce
 const { applyNegativeCarryForward, checkList } = require('./rules');
 const { isWrongKind, GST_RECLASS_CREATOR } = require('./clean');
 const { writeRaw, writeWorking, writePoints } = require('./sheets');
+const { mergedPointText } = require('./opening');
 
 const NEG_COLUMNS = (period) => [
   { sopF: 'cfCurSop', adjF: 'adjCur', finF: 'cfCur', label: `${fyLabelHeader(period.cur)} Pro CF` },
@@ -114,6 +115,7 @@ function compute(state, cfg) {
   }
   for (const [code, n] of rajCount) if (n > 1) pt(code, (stmt.find((s) => s.code === code) || {}).name || '', `Listed ${n} times in Rajeev's provision file; the rows are added together (one statement row per centre).`, rajByCode.get(code), 'For information.');
   for (const b of rajeev.blanks) pt(b.code, (stmt.find((s) => s.code === b.code) || {}).name || '', `Rajeev's provision file row ${b.row}: "${cfg.amountText}" is blank, taken as 0.`, null, 'Check whether an amount is missing in Rajeev\'s file.');
+  for (const o of opening.merged || []) pt(o.code, o.name, mergedPointText(o, opening.columns), o.v.ytd, 'Confirm with finance that these rows belong to the same centre and should be carried forward together.');
   for (const o of opening.centres.values()) if (o.blank.ytd || o.blank.cf) pt(o.code, o.name, `Last month's statement row ${o.row}: ${o.blank.ytd ? 'YTD ' + C : ''}${o.blank.ytd && o.blank.cf ? ' and ' : ''}${o.blank.cf ? Pv + ' Pro CF' : ''} is blank, taken as 0.`, null, 'Check whether last month\'s balance is missing.');
   if (adjInfo) {
     for (const s of stmt) {
@@ -125,7 +127,8 @@ function compute(state, cfg) {
       }
     }
   }
-  const defaulted = kept.filter((r) => r.tagBy === 'Default');
+  const defaulted = kept.filter((r) => r.tagBy === 'Default' && !r.yearWritten);
+  for (const r of kept) if (r.tagBy === 'Default' && r.yearWritten) pt(r.seg1, r.ccName, `ERP row ${r.erpRow}: the description writes a year, but the year is unclear (${r.basis}). Counted as ${fyLabelWorking(period.cur)} by default. "${r.desc.slice(0, 120)}"`, r.bal, 'Check which financial year this line belongs to.');
   if (defaulted.length) pt(null, '', `${defaulted.length} Working line(s) had no year in the description and were counted as ${fyLabelWorking(period.cur)} by default (total ${fmtINR(defaulted.reduce((a, r) => a + r.bal, 0))}). They are marked in the Remarks column of the Working sheet.`, defaulted.reduce((a, r) => a + r.bal, 0), 'For information. Check these lines if any of them belong to last year.');
   if (noVendor) pt(null, '', `${noVendor} Working line(s) have no vendor name (Attribute 3 and Party Name are both blank in the ERP extract).`, null, 'For information. These lines are still counted.');
   if (!kept.length) pt(null, '', 'No P2P or GST reclass lines in the ERP extract, so all booking columns are 0.', 0, 'Confirm the ERP extract is complete for this month.');

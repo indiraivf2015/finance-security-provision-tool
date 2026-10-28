@@ -70,6 +70,13 @@ test('Steps 7-8: IIVF P2P and Payables kept, GST reclass kept, other Spreadsheet
   const kept = st.kept.map((r) => r.bal).sort((a, b) => a - b).join(','); const removed = st.removed.map((r) => r.bal).sort((a, b) => a - b).join(',');
   return removed === '555,999' && st.kept.length === 9 ? true : `kept ${kept} removed ${removed}`;
 });
+test('Step 8 (Housekeeping): a taxverification2 line is kept whatever its source says; the same source by anyone else is removed', async () => {
+  const tv = 'taxverification2@indiraivf.in';
+  const { st, R } = await run({ lines: BASE_LINES.concat([L(9008, 701, 'GST reclass for the month of August 2026', { source: 'GST Reclass', by: tv }), L(9008, 702, 'GST reclass for the month of August 2026', { source: 'Manual', by: tv }), L(9008, 703, 'Relabelled for the month of August 2026', { source: 'GST Reclass', by: 'someone@indiraivf.in' })]) });
+  const k = (b) => st.kept.some((r) => r.bal === b), x = (b) => st.removed.some((r) => r.bal === b);
+  const s = R.stmt.find((r) => r.code === 9008);
+  return k(701) && k(702) && x(703) && near(s.bkCur, 1403) ? true : `kept ${st.kept.map((r) => r.bal)} removed ${st.removed.map((r) => r.bal)} booking ${s && s.bkCur}`;
+});
 test('Step 9: blank ATTRIBUTE3 filled with a formula to PARTY_NAME in the Working sheet', async () => {
   const { buffer } = await run();
   const ws = await sheetOf(buffer, 'Working'); const hdr = ws.getRow(1).values; const a3 = hdr.indexOf('ATTRIBUTE3'), pn = hdr.indexOf('PARTY_NAME');
@@ -159,6 +166,14 @@ test('Opening: two "YTD FY27" columns → the user picks one', async () => {
   if (!r.needChoice || r.needChoice.kind !== 'openingYtdCol') return 'no question';
   const r2 = await run({ openHdr: hdr, openRows: rows }, { openingYtdCol: r.needChoice.options[1].col });
   return near(r2.R.T.proCur, CODES.length) ? true : 'choice not used: ' + r2.R.T.proCur;
+});
+test('Opening: a centre on two rows of last month\'s statement is added together, listed, totals unchanged', async () => {
+  const rows = openRows(CODES).concat([[9003, NAME(9003), 0, 0, 0, 0, 0, 0, 0, 5000000]]);
+  const a = await run(); const b = await run({ openRows: rows });
+  const s = b.R.stmt.find((x) => x.code === 9003);
+  const p = b.R.points.find((x) => x.code === 9003 && x.point.startsWith('Centre 9003 appears 2 times in last month\'s statement (₹3,00,000.00 + ₹50,00,000.00); rows added together.'));
+  const totalsOk = near(b.R.T.proCur, a.R.T.proCur + 5000000) && near(b.R.T.proPrev, a.R.T.proPrev) && b.R.stmt.filter((x) => x.code === 9003).length === 1;
+  return s && near(s.proCur, 5300000) && near(s.proPrev, 5000) && p && totalsOk ? true : `9003 ${s && s.proCur}/${s && s.proPrev}, point ${!!p}, totals ${totalsOk}`;
 });
 test('April: stops, the SOP has no year-end roll-over rule', () => expectError({ period: 'Apr-27', from: '2027-04-01', to: '2027-04-30', sheet: 'HK Apr-27', openTitle: 'Housekeeping Exp – Provision for the month of Mar-27', lines: [L(9001, 10, 'for the month of April 2027')] }, /April/));
 test('Report dates: a To Date that is not the month end stops the tool', () => expectError({ to: '2026-09-29' }, /To Date/));
